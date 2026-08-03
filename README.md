@@ -15,6 +15,8 @@ explanation, and the statistical description come from deterministic R code. An
 optional Ollama connection can restate finished text with a model that runs on
 the same Mac. Raw rows are not given to that model.
 
+![The landing pagel, showing a matched comparison result](docs/screenshots/screenshot-operator-1.png)
+
 ## What is included
 
 - 53 paths, separated into statistical and machine-learning groups
