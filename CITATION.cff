@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use Daybreak in published work, please cite the software."
+title: "Daybreak: Statistics You Can Read"
+type: software
+version: 0.10.0
+date-released: 2026-08-02
+authors:
+  - family-names: Roy
+    given-names: Abhik
+license: PolyForm-Noncommercial-1.0.0

@@ -1,0 +1,12 @@
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+renv/library/
+renv/staging/
+*.Rproj
+node_modules/
+report/*_files/
+report/*.html
+report/*.docx
+report/*.pdf
