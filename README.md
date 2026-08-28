@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 [![Shiny](https://img.shields.io/badge/Shiny-R-276DC3?logo=r&logoColor=white)](#requirements)
-[![Release](https://img.shields.io/github/v/release/drabhikroy/rank-and-folder)](https://github.com/drabhikroy/rank-and-folder/releases)
+[![Release](https://img.shields.io/badge/release-v0.10.0-blue)](https://github.com/drabhikroy/rank-and-folder/releases/tag/v0.10.0)
 
 Daybreak is a local R Shiny application for exploring data, running
 common statistical analyses, and creating clear reports. It helps
