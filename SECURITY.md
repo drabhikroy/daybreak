@@ -31,7 +31,9 @@ construction, rather than assembled as raw HTML.
 
 Open a private security advisory through the repository, or open a
 normal issue if the problem is not sensitive. Please include the
-version, what you did, and what you saw.
+version, what you did, and what you saw, and, if a saved session file
+is involved, one with any real data replaced, since a session file
+can carry the data it was built from.
 
 ## Scope
 
