@@ -19,7 +19,7 @@ testthat::test_that("the release contains the documented method count", {
 })
 
 testthat::test_that("the installer lists every package named by the catalog", {
-  installer <- paste(readLines("install.R", warn = FALSE), collapse = "\n")
+  installer <- paste(readLines(project_path("install.R"), warn = FALSE), collapse = "\n")
   required <- unique(unlist(lapply(ANALYSES, `[[`, "requires"), use.names = FALSE))
 
   for (package in required) {

@@ -42,7 +42,7 @@ prepare_imputation_frame <- function(data) {
   out
 }
 
-# MICE returns the first completed dataset rather than a pooled analysis. A
+# MICE returns the first completed dataset instead of a pooled analysis. A
 # proper pooled result needs the model fitted once per imputation and the
 # estimates combined, which is outside what this screen does, so the mids
 # object is offered as a download and the limitation is stated rather than

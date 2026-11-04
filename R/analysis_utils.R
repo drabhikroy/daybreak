@@ -12,7 +12,20 @@ fmt_p <- function(p) {
 
 fmt_pct <- function(x, digits = 1) paste0(fmt_num(100 * x, digits), "%")
 
-bt <- function(x) paste0("`", gsub("`", "\\`", x, fixed = TRUE), "`")
+# Column names come from the reader's file, and the exported script is meant to
+# be run, so a name has to arrive in that script as data and never as code. A
+# name such as x"); system("...") pasted between plain quotes would close the
+# string and run whatever followed. r_str() uses deparse(), which is R's own
+# rule for writing a value back out as a literal, so every quote, backslash,
+# and control character is escaped exactly as the parser expects. bt() does the
+# same job for names inside formulas, where a backslash has to be escaped before
+# the backticks are.
+r_str <- function(x) vapply(as.character(x), function(value) deparse(value), character(1), USE.NAMES = FALSE)
+
+bt <- function(x) {
+  x <- gsub("\\", "\\\\", x, fixed = TRUE)
+  paste0("`", gsub("`", "\\`", x, fixed = TRUE), "`")
+}
 
 formula_from <- function(outcome, predictors, interaction = NULL, offset = NULL) {
   rhs <- if (length(predictors)) vapply(predictors, bt, character(1)) else "1"
@@ -26,8 +39,8 @@ formula_from <- function(outcome, predictors, interaction = NULL, offset = NULL)
 formula_string <- function(x) paste(deparse(x, width.cutoff = 500L), collapse = "")
 
 # Complete-case handling is done once, here, so that every engine reports the
-# same two numbers: how many rows were used and how many were set aside. Doing
-# it per engine meant those counts drifted depending on which function dropped
+# same two numbers: how many rows were used and how many were set aside. Left to
+# each engine, those counts would depend on which function happened to drop
 # missing values first.
 complete_frame <- function(data, columns) {
   columns <- unique(columns[nzchar(columns)])
@@ -70,7 +83,12 @@ need_variation <- function(data, columns, label = "analysis") {
   invisible(columns)
 }
 
-need_levels <- function(x, minimum = 2, maximum = Inf, label = "group") {
+# Names the column in its own message. The reader chose the column by name, so
+# that name is what they will recognize in the sentence telling them why it does
+# not fit.
+column_label <- function(name) sprintf("The column \"%s\"", name)
+
+need_levels <- function(x, minimum = 2, maximum = Inf, label = "The selected column") {
   count <- length(unique(stats::na.omit(x)))
   if (count < minimum || count > maximum) {
     upper <- if (is.finite(maximum)) paste0(" and no more than ", maximum) else ""
@@ -110,7 +128,7 @@ confidence_level <- function(options, default = 0.95) {
 
 # Builds the model matrix before fitting so that a rank deficiency or an empty
 # design is caught here, where the message can name the problem, rather than
-# inside a modelling function where it cannot.
+# inside a modeling function where it cannot.
 need_model_matrix <- function(formula, data, minimum_residual_df = 1L) {
   matrix <- stats::model.matrix(formula, data = data)
   rank <- qr(matrix)$rank
@@ -222,9 +240,9 @@ tidy_coefs <- function(model, exponentiate = FALSE, level = 0.95) {
 }
 
 # Every engine returns this shape. conf_level travels with the record because
-# the reporting and everyday layers have to name the interval they are reading.
-# Before it was carried here, both layers printed "95% confidence interval"
-# over bounds that had been computed at whatever level the form was set to.
+# the reporting and everyday layers have to name the interval they are reading,
+# and a fixed "95%" in the prose would be wrong whenever the form asks for a
+# different level.
 result_record <- function(method, n_used, n_omitted = 0, estimates = NULL,
                           tests = NULL, fit = NULL, checks = NULL, model = NULL,
                           plot_kind = method, plot_data = NULL, extras = list(),

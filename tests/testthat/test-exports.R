@@ -1,10 +1,9 @@
 # Downloads --------------------------------------------------------------
 #
-# R/exports.R had no test file before this one. That is how a missing constant
-# reached a release: the helper defined DAYBREAK_VERSION itself, the session
-# tests passed, and the six download paths that actually needed the constant
-# were never called. Every one of them is exercised here, against the real
-# constant from R/version.R.
+# Every download path is exercised here against the real constant from
+# R/version.R. A download fails at the moment of use, which is the one moment
+# nobody is watching a test run, so these paths get called directly rather than
+# trusted to work because the code around them does.
 
 sample_result <- function() {
   data <- load_sample("iris")
@@ -34,6 +33,8 @@ testthat::test_that("every text report format writes a file and names the versio
 })
 
 testthat::test_that("a session record can be built and read back", {
+  # Reading a session file is refused on R releases affected by CVE-2024-27322.
+  testthat::skip_if(getRversion() < "4.4.0", "session files need R 4.4.0 or later")
   data <- load_sample("iris")
   result <- sample_result()
   session <- new_daybreak_session(

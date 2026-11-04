@@ -23,12 +23,11 @@ RATIO_METHODS <- c(
 )
 
 # Both writing layers headline one coefficient, and they have to headline the
-# same one. The statistical description used to take the largest absolute
-# estimate while the everyday explanation took the first listed term, so a
-# logistic model could report an odds ratio of 27.3 in one paragraph and 0.9 in
-# the next. Absolute size is also the wrong ruler on a ratio scale: an odds
-# ratio of 0.1 is a stronger association than 1.5, but a smaller number. Taking
-# the log first puts protective and elevated associations on equal footing.
+# same one, or a logistic model could report an odds ratio of 27.3 in one
+# paragraph and 0.9 in the next. Absolute size is the wrong ruler on a ratio
+# scale: an odds ratio of 0.1 is a stronger association than 1.5, but a smaller
+# number. Taking the log first puts protective and elevated associations on
+# equal footing.
 primary_model_row <- function(result) {
   estimates <- result$estimates
   if (is.null(estimates) || !nrow(estimates) || is.null(estimates$Estimate)) return(NULL)
@@ -58,7 +57,7 @@ interval_sentence <- function(estimate, lower, upper, label = "estimate", level 
 }
 
 # Where an interval is available it decides the wording, and the p-value is
-# reported alongside rather than leading. An interval carries the size of the
+# reported alongside instead of leading. An interval carries the size of the
 # association as well as the evidence against the null, and a reader given only
 # a p-value has to guess at the part that usually matters more.
 evidence_sentence <- function(p, lower = NA_real_, upper = NA_real_, null = 0) {
@@ -354,7 +353,7 @@ machine_learning_narrative <- function(result) {
 
 # The statistical description ---------------------------------------------
 #
-# This layer writes for a reader who knows what an interval is. The everyday
+# This layer writes for someone who knows what an interval is. The everyday
 # layer in explanations.R writes for one who does not. Both read the same
 # result record, and where they describe the same quantity they have to select
 # it the same way, which is why primary_model_row lives here and is called from

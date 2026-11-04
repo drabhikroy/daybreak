@@ -2,8 +2,8 @@
 #
 # The palettes are the one part of the interface where a mistake is invisible
 # to the person who made it. These tests compute WCAG 2.2 relative luminance
-# directly rather than trusting a note in a comment, and they check every
-# palette against every surface a mark can be drawn on in that theme.
+# directly instead of trusting a note in a comment, and they check every
+# palette against every surface a mark can sit on in that theme.
 
 relative_luminance <- function(hex) {
   hex <- gsub("^#", "", hex)
@@ -60,7 +60,7 @@ testthat::test_that("plot_palette returns the theme-appropriate set", {
 })
 
 testthat::test_that("interactive controls meet the 44 pixel target", {
-  css <- readLines("www/app.css", warn = FALSE)
+  css <- readLines(project_path("www/app.css"), warn = FALSE)
   interactive_rules <- c(
     ".summary-action.btn", ".palette-option", ".browse-method-button.btn",
     ".model-secondary-button.btn", ".result-tab", ".method-kind-button"

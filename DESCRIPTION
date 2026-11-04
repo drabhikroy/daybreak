@@ -1,6 +1,6 @@
 Package: daybreak
 Title: Statistics You Can Read
-Version: 0.10.0
+Version: 0.10.1
 Authors@R: person("Abhik", "Roy", role = c("aut", "cre", "cph"))
 Description: A local Shiny application that runs fifty-three statistical
     methods and describes each result twice, once for a reader who knows what a

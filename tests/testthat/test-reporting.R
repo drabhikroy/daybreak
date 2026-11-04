@@ -102,7 +102,7 @@ testthat::test_that("Ollama model discovery reads documented response shapes", {
 
   empty <- ollama_models_result(list(models = list()), 200L)
   testthat::expect_true(empty$ok)
-  testthat::expect_empty(empty$models)
+  testthat::expect_length(empty$models, 0)
 
   failed <- ollama_models_result(list(error = "service unavailable"), 503L)
   testthat::expect_false(failed$ok)
@@ -165,4 +165,30 @@ testthat::test_that("Ollama generation failures retain the actual cause", {
     "qwen3.5:4b", 300, list(ok = FALSE, models = character(0))
   )
   testthat::expect_match(refused$message, "generation service could not be reached", fixed = TRUE)
+})
+
+testthat::test_that("interval sentences name the confidence level that was used", {
+  iris_data <- droplevels(load_sample("iris")[load_sample("iris")$Species != "setosa", ])
+  for (level in c(0.80, 0.99)) {
+    result <- run_analysis("independent_t", iris_data, list(outcome = "Sepal.Length", group = "Species"), list(conf_level = level))
+    headline <- build_narrative(result)$headline
+    testthat::expect_match(headline, sprintf("%g%% confidence interval", 100 * level), fixed = TRUE)
+    testthat::expect_no_match(headline, "95% confidence interval", fixed = TRUE)
+  }
+})
+
+testthat::test_that("both readings headline the coefficient farthest from no association", {
+  # On a ratio scale 0.1 is a stronger association than 1.5 even though it is
+  # the smaller number, so the selector has to compare distance from 1 on the
+  # log scale.
+  result <- result_record(
+    "logistic_regression", 100, 0,
+    estimates = data.frame(Term = c("(Intercept)", "weak", "strong"), Estimate = c(2, 1.5, 0.1),
+                           Lower = c(1, 1.1, 0.05), Upper = c(3, 2, 0.2), p = c(0.01, 0.02, 0.001)),
+    extras = list(outcome = "admitted", predictors = c("weak", "strong")),
+    conf_level = 0.95
+  )
+  testthat::expect_identical(primary_model_row(result)$Term, "strong")
+  testthat::expect_match(build_narrative(result)$headline, "strong", fixed = TRUE)
+  testthat::expect_match(build_accessible_explanation(result)$bottom_line, "strong", fixed = TRUE)
 })

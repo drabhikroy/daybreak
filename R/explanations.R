@@ -22,9 +22,9 @@ first_finite <- function(...) {
 # values are one tab away in the Exact values panel, and a sentence carrying
 # six significant figures is a sentence that does not get read.
 # A zero-length argument is handled the same way a missing one is. Extras can
-# be absent when a session written by an earlier release is reopened, and a
-# sentence that says the value is unavailable is far better than an error that
-# takes the whole explanation down with it.
+# be absent from a reopened session file, and a sentence that says the value is
+# unavailable is far better than an error that takes the whole explanation down
+# with it.
 plain_number <- function(x, digits = 2) {
   if (length(x) != 1L || !is.finite(x)) return("an unavailable value")
   format(round(x, digits), trim = TRUE, scientific = FALSE, big.mark = ",")
@@ -184,7 +184,7 @@ anova_followup_sentence <- function(result) {
 }
 
 # Turns the evidence into one of four plain readings: clear, leaning, unclear,
-# or no evidence. Four levels rather than a threshold, because a reader handed
+# or no evidence. Four levels instead of a threshold, because a reader handed
 # a single yes or no will treat it as a verdict.
 plain_signal <- function(result, null = 0) {
   estimate <- first_finite(first_value(result$estimates, "Estimate"))
@@ -212,9 +212,9 @@ plain_certainty <- function(result, null = 0, descriptive = FALSE) {
 }
 
 # The certainty paragraph never says a result is proven or disproven. It
-# describes what the interval covers and leaves the judgment where it belongs,
-# because the reader knows what would count as a meaningful difference in their
-# setting and the app does not.
+# describes what the interval covers and leaves the judgment where it belongs.
+# The person reading knows what would count as a meaningful difference in their
+# setting, and the app does not.
 plain_certainty_row <- function(row, null = 0) {
   signal <- p_state(
     first_finite(first_value(row, "p")),
@@ -664,7 +664,7 @@ accessible_core <- function(result) {
 #
 # Five fixed questions, always in the same order: what was asked, what came
 # back, how to picture it, how sure it is, and what it does not cover. The
-# order is fixed so that a reader who works through one result knows where to
+# order is fixed so that someone who works through one result knows where to
 # look in the next, and the last question is never dropped, because the limits
 # of a finding are the part most likely to be left out of a summary.
 build_accessible_explanation <- function(result) {

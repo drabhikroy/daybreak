@@ -229,17 +229,13 @@ local_model_source <- function(explanation) {
   )
 }
 
-# The earlier prompt asked the model to "explain the comparison with a concrete
-# mental picture". That one line was responsible for most of what went wrong
-# with the output: asked for a picture, a model invents one, and the invented
-# picture is not checkable. An iris comparison came back as three piles of sand
-# measured for height, which is not what a sepal is, not what the figure shows,
-# and not something the reader can verify against anything on screen.
-#
-# The instructions below are built around that. The model is given a picture and
-# told to simplify its wording; it is never asked to supply one. Everything else
-# follows the same principle: this is a rewriting job with a fixed structure and
-# fixed facts, not a writing job.
+# The model is never asked to supply a picture or an analogy of its own. Asked
+# for one, a model invents it, and an invented comparison cannot be checked
+# against anything on screen: an iris measurement described as piles of sand is
+# neither what a sepal is nor what the figure shows. The everyday layer already
+# writes the picture, so the model receives it and is told to simplify the
+# wording. The same principle runs through every instruction below. This is a
+# rewriting job with a fixed structure and fixed facts, not a writing job.
 build_local_model_prompt <- function(explanation, reading_level = "plain") {
   source <- local_model_source(explanation)
   subject <- explanation$context %||% ""

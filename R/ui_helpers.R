@@ -6,14 +6,14 @@
 # being edited.
 #
 # Two rules run through the whole file. The first is that nothing is hidden
-# behind a control the reader has to discover: if a setting affects the result,
+# behind a control someone has to discover: if a setting affects the result,
 # it is on screen next to the button that produces the result. The second is
 # that every message is written for the person who chose the columns, not for
 # the person who wrote the engine.
 
 # Interface pieces ---------------------------------------------------------
 #
-# Icons are inline SVG rather than an icon font or an image file. A font can
+# Icons are inline SVG instead of an icon font or an image file. A font can
 # fail to load and leave a box character in the middle of a sentence, and an
 # image cannot inherit the current text color, which matters here because the
 # same mark has to work across five palettes and two themes.
@@ -106,9 +106,7 @@ method_feasibility <- function(method_spec, data) {
     minimum_distinct_columns <- minimum_distinct_columns + needed
     if (length(choices) < needed) {
       # The role label is a heading such as "Categorical outcome", so it needs an
-      # article to sit inside a sentence. The earlier wording read "It needs
-      # categorical outcome and the file does not appear to contain that
-      # choice", which is not a sentence a reader should be shown.
+      # article before it can sit inside a sentence.
       label <- if (item$type == "numeric_many") "two numeric columns" else tolower(item$label)
       article <- if (item$type == "numeric_many") "" else if (grepl("^[aeiou]", label)) "an " else "a "
       reasons <- c(reasons, sprintf(
@@ -411,8 +409,8 @@ default_role_values <- function(method_spec, data, sample_id = NULL, method_id =
 }
 
 # One input per role, built from the role type. Multi-select roles keep the
-# order the reader chose, because for several methods the first predictor is
-# the one the figure and the headline coefficient are drawn from.
+# order they were chosen in, because for several methods the first predictor is
+# the one the figure and the headline coefficient come from.
 role_input <- function(role, data, current = NULL) {
   sig <- data_signature(data)
   choices <- role_choices(role$type, data)
@@ -498,7 +496,8 @@ analysis_options_ui <- function(method_id, data, ordinal_outcome = NULL) {
     ),
     hdbscan_clustering = numericInput("density_min_points", "Minimum cluster size", 5, min = 2, step = 1),
     factor_analysis = tagList(
-      numericInput("factors", "Number of factors", 2, min = 1, step = 1),
+      numericInput("factors", "Number of factors", NA, min = 1, step = 1),
+      p(class = "micro-note", "Leave blank and Daybreak uses two factors, or one when the columns cannot support two."),
       selectInput("rotation", "Rotation", c("Oblimin, factors may correlate" = "oblimin", "Promax, factors may correlate" = "promax", "Varimax, factors uncorrelated" = "varimax", "None" = "none")),
       selectInput("factor_method", "Extraction", c("Minimum residual" = "minres", "Maximum likelihood" = "ml", "Principal axis" = "pa"))
     ),
@@ -574,7 +573,7 @@ lavaan_options_ui <- function(data) {
 
 # Reading the form --------------------------------------------------------
 #
-# A missing required role stops here with the role's own label rather than its
+# A missing required role stops here with the role's own label instead of its
 # input id, so the message names the thing the reader can see on screen.
 collect_roles <- function(input, method_spec) {
   out <- list()
@@ -1031,7 +1030,7 @@ check_cards_ui <- function(checks) {
 }
 
 # The statistical description, shown after the everyday reading. Both are
-# always present: this is not a mode the reader switches between, because the
+# always present: this is not a mode to switch between, because the
 # point is that the two accounts describe the same numbers.
 narrative_ui <- function(narrative) {
   tags$section(class = "reading statistical-description", `aria-labelledby` = "statistical-description-title",
@@ -1125,9 +1124,9 @@ result_verdict <- function(result) {
   )
 }
 
-# The reader came for one sentence. It used to sit in the third card down, in
-# body text, at the same size as the surrounding explanation. Here it leads,
-# once, at a size that says it is the answer. Everything below it is support.
+# The reader came for one sentence. Set in body text among the other cards, it
+# reads as one paragraph of several, so it leads here, once, at a size that says
+# it is the answer. Everything below it is support.
 answer_hero_ui <- function(result, accessible) {
   verdict <- result_verdict(result)
   div(
@@ -1194,7 +1193,7 @@ result_tabs_ui <- function(result, narrative, accessible, stale = FALSE) {
 }
 
 # The preview is capped rather than paged. A reader checking that their file
-# loaded correctly needs the first screenful and the column types; a reader who
+# loaded correctly needs the first screenful and the column types; someone who
 # needs all of it has better tools than this panel.
 data_preview_ui <- function(data, data_name, limit = 500L) {
   shown <- min(nrow(data), limit)
@@ -1217,7 +1216,7 @@ data_preview_ui <- function(data, data_name, limit = 500L) {
   )
 }
 
-# Help text stays in the app rather than pointing at a website, because the
+# Help text stays in the app instead of pointing at a website, because the
 # whole application is built to run with no network at all.
 help_ui <- function() {
   div(

@@ -18,47 +18,47 @@ accessible <- params$accessible
 
 ```{r everyday, results='asis'}
 if (!is.null(accessible)) {
-  cat("\n## Everyday explanation\n\n", accessible$question,
-      "\n\n### The short answer\n\n", accessible$bottom_line,
-      "\n\n### How to picture it\n\n", accessible$picture,
-      "\n\n### How sure can we be?\n\n", accessible$certainty,
-      "\n\n### What this does not tell us\n\n", accessible$boundary,
-      "\n\n", accessible$data_note, "\n", sep = "")
+  cat("\n## Everyday explanation\n\n", md_text(accessible$question),
+      "\n\n### The short answer\n\n", md_text(accessible$bottom_line),
+      "\n\n### How to picture it\n\n", md_text(accessible$picture),
+      "\n\n### How sure can we be?\n\n", md_text(accessible$certainty),
+      "\n\n### What this does not tell us\n\n", md_text(accessible$boundary),
+      "\n\n", md_text(accessible$data_note), "\n", sep = "")
 }
 ```
 
 ## Statistical description
 
-`r narrative$headline`
+`r md_text(narrative$headline)`
 
 ```{r narrative, results='asis'}
 for (card in narrative$cards) {
-  cat("\n## ", card$title, "\n\n", card$body, "\n", sep = "")
+  cat("\n## ", md_text(card$title), "\n\n", md_text(card$body), "\n", sep = "")
 }
 ```
 
 ## Estimates
 
 ```{r estimates}
-if (!is.null(result$estimates)) knitr::kable(plain_table(result$estimates), caption = "Estimates")
+if (!is.null(result$estimates)) knitr::kable(md_frame(result$estimates), caption = "Estimates")
 ```
 
 ## Tests
 
 ```{r tests}
-if (!is.null(result$tests)) knitr::kable(plain_table(result$tests), caption = "Hypothesis tests")
+if (!is.null(result$tests)) knitr::kable(md_frame(result$tests), caption = "Hypothesis tests")
 ```
 
 ## Model fit
 
 ```{r fit}
-if (!is.null(result$fit)) knitr::kable(plain_table(result$fit), caption = "Model fit")
+if (!is.null(result$fit)) knitr::kable(md_frame(result$fit), caption = "Model fit")
 ```
 
 ## Checks
 
 ```{r checks}
-if (!is.null(result$checks)) knitr::kable(result$checks[, setdiff(names(result$checks), "Status"), drop = FALSE], caption = "Checks and limits")
+if (!is.null(result$checks)) knitr::kable(md_frame(result$checks[, setdiff(names(result$checks), "Status"), drop = FALSE]), caption = "Checks and limits")
 ```
 
 ## Reproducibility note

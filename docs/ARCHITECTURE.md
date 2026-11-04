@@ -3,7 +3,7 @@
 Daybreak is a single-process Shiny application with eleven boundaries.
 
 1. `catalog.R` states what methods exist and what column roles they require.
-2. `data_io.R` reads files and converts labelled columns into explicit factors.
+2. `data_io.R` reads files and converts labeled columns into explicit factors.
 3. `imputation.R` prepares a recoverable working copy and leaves the loaded
    data object available for restoration.
 4. The core, advanced, and machine-learning engine files compute results and

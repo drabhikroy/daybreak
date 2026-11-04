@@ -2,15 +2,13 @@
 
 # Chart palettes, one set per theme ---------------------------------------
 #
-# A palette has to be read against the surface it is drawn on, so light mode
-# needs its own values rather than the dark ones reused. The earlier release
-# carried a single set tuned for the dark background, which meant that in light
-# mode the standard gold sat at 1.6 to 1 against white and the monochrome ramp
-# at 1.1 to 1. Every entry below was measured against the plot background for
-# its own theme and clears the WCAG 2.2 non-text minimum of 3 to 1, with the
-# weakest at 3.7 to 1.
+# A palette has to be read against the surface it sits on, so light mode
+# needs its own values. Colors tuned for a dark background mostly fail on a
+# light one: the dark set's gold measures 1.6 to 1 against white. Every entry
+# below was measured against the plot background for its own theme and clears
+# the WCAG 2.2 non-text minimum of 3 to 1, with the weakest at 3.7 to 1.
 #
-# Monochrome stops at four steps on purpose. Past four, neighboring greys stop
+# Monochrome stops at four steps on purpose. Past four, neighboring grays stop
 # being tellable apart no matter how they are spaced, so the figures pair the
 # ramp with shape and line style instead of adding a fifth near-duplicate.
 DAYBREAK_PALETTES <- list(
@@ -48,7 +46,7 @@ plot_style <- function(mode = "dark", palette = "standard") {
   )
 }
 
-# One theme for every figure. Sharing it means a reader who has learned to
+# One theme for every figure. Sharing it means someone who has learned to
 # read one Daybreak chart has learned to read all of them, and it keeps the
 # palette and contrast decisions in a single place rather than repeated across
 # thirty plotting functions.
@@ -95,8 +93,8 @@ sun_scale <- function(style, aesthetic = c("color", "fill"), discrete = TRUE) {
 # Dispatch by plot_kind rather than by method, because several methods share a
 # figure. The everyday explanation describes whatever this returns, so any
 # change to a figure needs the matching sentence in explanations.R changed with
-# it. That pairing was broken once, and the ARIMA text spent a release
-# describing a forecast band that was never drawn.
+# it. Nothing checks that pairing automatically, and a sentence describing a
+# shaded band that the figure does not draw is easy to miss in review.
 analysis_plot <- function(result, mode = "dark", palette = "standard") {
   style <- plot_style(mode, palette)
   kind <- result$plot_kind
@@ -182,7 +180,7 @@ plot_one_numeric <- function(result, style) {
     ggplot2::labs(title = outcome, subtitle = "The dashed line marks the sample mean.", x = outcome, y = "Density")
 }
 
-# Individual rows are drawn under the box rather than replaced by it. A box
+# Individual rows are plotted under the box rather than replaced by it. A box
 # plot alone hides sample size and hides a bimodal group entirely, and both are
 # things a reader should be able to notice without asking for a second figure.
 plot_group_numeric <- function(result, style) {
@@ -270,7 +268,7 @@ plot_partial <- function(result, style) {
 }
 
 # Residuals against fitted values rather than the fitted line over the data.
-# With more than one predictor the line cannot be drawn faithfully in two
+# With more than one predictor the line cannot be shown faithfully in two
 # dimensions, and the residual plot is what actually shows whether the model
 # form was reasonable.
 plot_regression <- function(result, style) {
@@ -431,10 +429,10 @@ plot_lavaan <- function(result, style) {
 
 plot_growth <- function(result, style) {
   d <- result$plot_data; time <- result$extras$predictors[1]; outcome <- result$extras$outcome; cluster <- result$extras$cluster
-  # The engine attaches the fitted values, so the bright line can be the model
-  # that was actually estimated. The earlier version drew a loess smoother over
-  # the raw points, which meant the figure showed a curve the reader had not
-  # asked for and the fitted multilevel model appeared nowhere.
+  # The engine attaches the fitted values, so the bright line is the model that
+  # was actually estimated. A smoother over the raw points would show a curve
+  # the reader never asked for while leaving the fitted model out of the
+  # picture entirely.
   ggplot2::ggplot(d, ggplot2::aes(x = .data[[time]], y = .data[[outcome]], group = .data[[cluster]])) +
     ggplot2::geom_line(color = style$muted, alpha = 0.20) +
     ggplot2::geom_point(color = style$muted, alpha = 0.28, size = 1.3) +
@@ -447,7 +445,7 @@ plot_growth <- function(result, style) {
                   x = time, y = outcome)
 }
 
-# Censoring marks are drawn on the curve. A survival curve without them looks
+# Censoring marks sit on the curve. A survival curve without them looks
 # like a curve fitted to complete follow-up, which is the single most common
 # misreading of this figure.
 plot_survival <- function(result, style) {

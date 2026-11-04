@@ -236,9 +236,9 @@
       const possible = item.possible === true;
       const option = document.querySelector('#method option[value="' + item.id + '"]');
       if (option) {
-        // The marker used to be a bare triangle plus a title attribute, and a
-        // screen reader announced neither usefully. The words go into the
-        // option label so the reason is spoken with the method name.
+        // A screen reader announces neither a bare symbol nor a title
+        // attribute on an option usefully, so the words go into the option
+        // label and the reason is spoken with the method name.
         if (!option.dataset.originalLabel) {
           option.dataset.originalLabel = option.textContent
             .replace(/^△\s*/, "")
@@ -378,7 +378,7 @@
   });
 
   // A quick-start card on the landing page picks the sample, then asks the
-  // server to load it and run its starting method. Two inputs rather than one
+  // server to load it and run its starting method. Two inputs instead of one
   // because the sample selector in the sidebar has to move as well, so the
   // reader can see which example they are looking at.
   document.addEventListener("click", function (event) {
@@ -393,7 +393,7 @@
     trapDialogFocus(event);
 
     // Command or Control with Return runs the analysis from anywhere on the
-    // page, so a reader who has just changed a setting does not have to hunt
+    // page, so someone who has just changed a setting does not have to hunt
     // for the button at the bottom of the sidebar.
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       const run = document.getElementById("run_analysis");

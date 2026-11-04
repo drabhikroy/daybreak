@@ -51,3 +51,4 @@ jobs:
           name: Daybreak ${{ steps.version.outputs.number }}
           body_path: release-notes.md
           files: daybreak.zip
+          draft: true

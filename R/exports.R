@@ -60,9 +60,30 @@ export_plot <- function(plot, path, format, quality = "print", size = "standard"
   invisible(path)
 }
 
+# Column names, category labels, and every sentence built from them come from
+# the reader's file. Markdown passes raw HTML straight through, so a column
+# named <img onerror=...> would become live markup in the HTML report and run
+# when the file is opened. Escaping the three HTML metacharacters as entities
+# keeps that text inert. Pandoc turns the entities back into ordinary
+# characters for HTML, Word, and PDF alike, so a name containing < still reads
+# correctly in every format.
+md_text <- function(x) {
+  x <- gsub("&", "&amp;", as.character(x), fixed = TRUE)
+  x <- gsub("<", "&lt;", x, fixed = TRUE)
+  gsub(">", "&gt;", x, fixed = TRUE)
+}
+
+md_frame <- function(x) {
+  if (is.null(x)) return(x)
+  x <- plain_table(x)
+  x[] <- lapply(x, function(column) if (is.character(column) || is.factor(column)) md_text(column) else column)
+  names(x) <- md_text(names(x))
+  x
+}
+
 markdown_table <- function(x) {
   if (is.null(x) || !nrow(x)) return(character(0))
-  x <- plain_table(x)
+  x <- md_frame(x)
   headers <- names(x)
   rows <- apply(x, 1, function(row) paste0("| ", paste(gsub("\\|", "\\\\|", as.character(row)), collapse = " | "), " |"))
   c(paste0("| ", paste(headers, collapse = " | "), " |"),
@@ -70,25 +91,25 @@ markdown_table <- function(x) {
 }
 
 # The Markdown report carries both readings and the tables, in the order they
-# appear on screen. Matching the screen order matters: a reader who exports a
+# appear on screen. Matching the screen order matters: someone who exports a
 # result should recognize the document as the thing they were just looking at.
 report_markdown <- function(result, narrative, accessible = NULL) {
   checks <- if (!is.null(result$checks)) result$checks[, setdiff(names(result$checks), "Status"), drop = FALSE] else NULL
   everyday <- if (is.null(accessible)) character(0) else c(
-    "## Everyday explanation", "", accessible$question, "",
-    accessible$context %||% "", "",
-    "### The short answer", "", accessible$bottom_line, "",
-    "### How to picture it", "", accessible$picture, "",
-    "### How sure can we be?", "", accessible$certainty, "",
-    "### What this does not tell us", "", accessible$boundary, "",
-    accessible$data_note, ""
+    "## Everyday explanation", "", md_text(accessible$question), "",
+    md_text(accessible$context %||% ""), "",
+    "### The short answer", "", md_text(accessible$bottom_line), "",
+    "### How to picture it", "", md_text(accessible$picture), "",
+    "### How sure can we be?", "", md_text(accessible$certainty), "",
+    "### What this does not tell us", "", md_text(accessible$boundary), "",
+    md_text(accessible$data_note), ""
   )
   c(
-    paste0("# ", narrative$title), "",
+    paste0("# ", md_text(narrative$title)), "",
     everyday,
     "## Statistical description", "",
-    narrative$headline, "",
-    unlist(lapply(narrative$cards, function(card) c(paste0("## ", card$title), "", card$body, ""))),
+    md_text(narrative$headline), "",
+    unlist(lapply(narrative$cards, function(card) c(paste0("## ", md_text(card$title)), "", md_text(card$body), ""))),
     "## Estimates", "", markdown_table(result$estimates), "",
     "## Tests", "", markdown_table(result$tests), "",
     "## Model fit", "", markdown_table(result$fit), "",

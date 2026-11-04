@@ -48,14 +48,14 @@ is why `primary_model_row()` lives in `R/reporting.R` and is called from
 `R/explanations.R` rather than being reimplemented there.
 
 A change to a figure needs the matching sentence in `R/explanations.R` changed
-with it. That pairing was broken once, and the ARIMA text spent a release
-describing a forecast band that was never drawn.
+with it. Nothing checks that pairing automatically, and a sentence describing a
+shaded band the figure does not draw is easy to miss in review.
 
 ## Color and contrast
 
 Palettes are measured, not chosen by eye. `tests/testthat/test-contrast.R`
 computes WCAG relative luminance for every palette against every surface a mark
-can be drawn on in that theme, and the non-text minimum of 3 to 1 is a floor,
+can sit on in that theme, and the non-text minimum of 3 to 1 is a floor,
 not a target. If a palette needs another color, add it to the test first and
 watch it fail.
 

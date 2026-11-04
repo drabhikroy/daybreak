@@ -1,25 +1,55 @@
 # Load the application the same way app.R does.
 #
-# This helper deliberately defines nothing of its own. An earlier version
-# declared DAYBREAK_VERSION here, which meant the export and session tests
-# passed against a constant that the running app never supplied. If a file
-# needs a value, it has to come from the file that ships.
+# This helper deliberately defines nothing of its own. A value supplied here
+# would let a test pass against something the running app never provides, so
+# every value has to come from the file that ships.
 
-source("R/version.R")
-source("R/data_io.R")
-source("R/catalog.R")
-source("R/analysis_utils.R")
-source("R/imputation.R")
-source("R/engines_core.R")
-source("R/engines_advanced.R")
-source("R/engines_ml.R")
-source("R/reporting.R")
-source("R/explanations.R")
-source("R/session_state.R")
-source("R/local_models.R")
-source("R/plots.R")
-source("R/exports.R")
-source("R/ui_helpers.R")
+# testthat runs every test file from inside tests/testthat, so a path such as
+# "R/version.R" only resolves from the project root. The root is found once by
+# walking up to the folder that holds app.R, and every file reference in the
+# tests goes through project_path() instead of relying on the working
+# directory. That also lets the suite run from RStudio, the command line, or CI
+# without anyone first changing directory.
+find_daybreak_root <- function(start = getwd()) {
+  here <- normalizePath(start, mustWork = TRUE)
+  repeat {
+    if (file.exists(file.path(here, "app.R")) && file.exists(file.path(here, "R", "version.R"))) return(here)
+    parent <- dirname(here)
+    if (identical(parent, here)) stop("Could not find the Daybreak project root above ", start, ".")
+    here <- parent
+  }
+}
+
+DAYBREAK_ROOT <- find_daybreak_root()
+
+# app.R attaches shiny before sourcing the interface builders, which call div()
+# and tags without a namespace. The helper does the same so the interface tests
+# exercise those builders as the app does.
+if (requireNamespace("shiny", quietly = TRUE)) suppressPackageStartupMessages(library(shiny))
+project_path <- function(...) file.path(DAYBREAK_ROOT, ...)
+
+# Sourced from the root so that anything an app file records about its own
+# location at load time, such as the report template folder, matches what
+# app.R would record.
+local({
+  old <- setwd(DAYBREAK_ROOT)
+  on.exit(setwd(old), add = TRUE)
+  source("R/version.R", local = globalenv())
+  source("R/data_io.R", local = globalenv())
+  source("R/catalog.R", local = globalenv())
+  source("R/analysis_utils.R", local = globalenv())
+  source("R/imputation.R", local = globalenv())
+  source("R/engines_core.R", local = globalenv())
+  source("R/engines_advanced.R", local = globalenv())
+  source("R/engines_ml.R", local = globalenv())
+  source("R/reporting.R", local = globalenv())
+  source("R/explanations.R", local = globalenv())
+  source("R/session_state.R", local = globalenv())
+  source("R/local_models.R", local = globalenv())
+  source("R/plots.R", local = globalenv())
+  source("R/exports.R", local = globalenv())
+  source("R/ui_helpers.R", local = globalenv())
+})
 
 # A completed result used by several test files. Building it once here keeps
 # the individual tests focused on the behavior they are checking.

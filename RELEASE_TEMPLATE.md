@@ -8,7 +8,7 @@ Steps for cutting a Daybreak release, in order.
 - [ ] `DESCRIPTION` and `CITATION.cff` carry the same version.
 - [ ] `CHANGELOG.md` has a section headed with that version and today's date.
 - [ ] `source("tests/run_tests.R")` passes with the full dependency set installed.
-- [ ] `docs/CODE_REVIEW.md` states what was actually run for this release.
+- [ ] `docs/METHOD_AUDIT.md` names this release and its test column is current.
 - [ ] The app opens, the three landing samples run, and the downloads produce files.
 
 ## Tag and push
@@ -28,8 +28,11 @@ Pushing the tag starts the release workflow, which extracts the matching
 
 Title: `Daybreak <version>`
 
-Body: the workflow fills this from the changelog. Add a short opening paragraph
-above it describing what the release is for.
+Body: the workflow fills this from the changelog. Add a paragraph above it
+describing what the release is for. For the first release of a project, this
+needs a real introduction, since the reader has not seen the project before
+and the changelog entry below it will read as a diff against nothing they can
+see. Later releases can stay to a sentence or two.
 
 Attach `daybreak.zip` so people can download a working copy without cloning.
 

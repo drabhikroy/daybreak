@@ -14,7 +14,7 @@
 # assignment gives numbers close enough to look right and different enough to
 # be wrong, which is worse than not exporting a script at all.
 #
-# Nothing here selects a model for the reader. A method that quietly tried
+# Nothing here selects a model on anyone's behalf. A method that quietly tried
 # several settings and reported the best would be reporting a number that does
 # not generalize, and the reader would have no way to see that had happened.
 
@@ -30,8 +30,8 @@ validate_split_options <- function(proportion = 0.80, seed = 2026L) {
 
 ml_holdout_code <- function(outcome, predictors, mode, proportion, seed) {
   columns <- unique(c(outcome, predictors))
-  quoted_columns <- paste(sprintf("\"%s\"", columns), collapse = ", ")
-  quoted_predictors <- paste(sprintf("\"%s\"", predictors), collapse = ", ")
+  quoted_columns <- paste(r_str(columns), collapse = ", ")
+  quoted_predictors <- paste(r_str(predictors), collapse = ", ")
   common <- c(
     sprintf("columns <- c(%s)", quoted_columns),
     "model_data <- df[complete.cases(df[columns]), columns, drop = FALSE]",
@@ -43,8 +43,8 @@ ml_holdout_code <- function(outcome, predictors, mode, proportion, seed) {
     sprintf("set.seed(%d)", seed)
   )
   split <- if (identical(mode, "classification")) c(
-    sprintf("model_data[[\"%s\"]] <- droplevels(factor(model_data[[\"%s\"]]))", outcome, outcome),
-    sprintf("groups <- split(seq_len(nrow(model_data)), model_data[[\"%s\"]], drop = TRUE)", outcome),
+    sprintf("model_data[[%s]] <- droplevels(factor(model_data[[%s]]))", r_str(outcome), r_str(outcome)),
+    sprintf("groups <- split(seq_len(nrow(model_data)), model_data[[%s]], drop = TRUE)", r_str(outcome)),
     sprintf("training_rows <- sort(unlist(lapply(groups, function(rows) sample(rows, max(1L, min(length(rows) - 1L, floor(length(rows) * %s))))), use.names = FALSE))", format(proportion))
   ) else c(
     sprintf("training_count <- max(10L, min(nrow(model_data) - 5L, floor(nrow(model_data) * %s)))", format(proportion)),
@@ -56,7 +56,7 @@ ml_holdout_code <- function(outcome, predictors, mode, proportion, seed) {
 }
 
 ml_matrix_code <- function(predictors) {
-  quoted_predictors <- paste(sprintf("\"%s\"", predictors), collapse = ", ")
+  quoted_predictors <- paste(r_str(predictors), collapse = ", ")
   c(
     sprintf("predictors <- c(%s)", quoted_predictors),
     "model_matrix <- model.matrix(~ . - 1, data = model_data[predictors])",
@@ -186,6 +186,48 @@ check_holdout_factor_levels <- function(training, holdout, predictors) {
   invisible(TRUE)
 }
 
+# rpart, ranger, and naiveBayes all build their own model frames internally,
+# and none of them copes with a column name that needs backticks: rpart loses
+# the column during its label lookup and ranger refuses the formula outright.
+# These three methods therefore fit on short internal names, x1 to xk for the
+# predictors and .outcome for the outcome, and translate importance back to the
+# reader's column names afterwards. Nothing the reader sees changes.
+model_view <- function(frame, outcome, predictors) {
+  internal <- sprintf("x%d", seq_along(predictors))
+  view <- data.frame(.outcome = frame[[outcome]])
+  for (i in seq_along(predictors)) view[[internal[i]]] <- frame[[predictors[i]]]
+  list(
+    data = view,
+    formula = stats::as.formula(paste(".outcome ~", paste(internal, collapse = " + "))),
+    labels = stats::setNames(predictors, internal)
+  )
+}
+
+relabel_importance <- function(values, labels) {
+  if (!length(values)) return(values)
+  names(values) <- unname(labels[names(values)])
+  values
+}
+
+# The exported script mirrors the app. When every name is already a valid R
+# name, the script keeps the readable formula on the real columns. Otherwise it
+# adds the same renaming step the app uses, with a map back to the real names.
+ml_formula_code <- function(outcome, predictors, real_formula) {
+  columns <- c(outcome, predictors)
+  if (identical(make.names(columns), columns)) return(list(lines = character(0), formula = formula_string(real_formula)))
+  internal <- sprintf("x%d", seq_along(predictors))
+  list(
+    lines = c(
+      "# Some column names are not valid R names, so the model uses short internal names.",
+      sprintf("name_map <- c(%s)", paste(sprintf("%s = %s", internal, r_str(predictors)), collapse = ", ")),
+      sprintf("to_internal <- function(x) { out <- data.frame(.outcome = x[[%s]]); for (n in names(name_map)) out[[n]] <- x[[name_map[[n]]]]; out }", r_str(outcome)),
+      "training_data <- to_internal(training_data)",
+      "holdout_data <- to_internal(holdout_data)"
+    ),
+    formula = paste(".outcome ~", paste(internal, collapse = " + "))
+  )
+}
+
 tree_prediction <- function(data, roles, options, mode = c("classification", "regression")) {
   mode <- match.arg(mode)
   columns <- unique(c(roles$outcome, roles$predictors))
@@ -213,23 +255,24 @@ tree_prediction <- function(data, roles, options, mode = c("classification", "re
   train <- f$data[split$train, , drop = FALSE]
   test <- f$data[split$test, , drop = FALSE]
   check_holdout_factor_levels(train, test, roles$predictors)
-  # rpart runs its own cross-validation while growing the tree, and that draws
-  # from the random stream. Leaving the call unwrapped meant two things: the
-  # cross-validation results depended on whatever state the session happened to
-  # be in, and running an analysis quietly moved the reader's random stream.
-  # Every other engine that touches randomness goes through with_local_seed, and
-  # now this one does too.
+  # rpart runs its own cross-validation while growing the tree, which pulls from
+  # the random stream. Inside with_local_seed the result depends only on the
+  # chosen seed, and the reader's own random stream is left where it was.
+  train_view <- model_view(train, roles$outcome, roles$predictors)
+  test_view <- model_view(test, roles$outcome, roles$predictors)
   fit <- with_local_seed(seed, rpart::rpart(
-    formula, data = train, method = if (mode == "classification") "class" else "anova",
+    train_view$formula, data = train_view$data, method = if (mode == "classification") "class" else "anova",
     control = rpart::rpart.control(
       cp = cp,
       minsplit = minsplit
     )
   ))
-  predicted <- stats::predict(fit, newdata = test, type = if (mode == "classification") "class" else "vector")
+  predicted <- stats::predict(fit, newdata = test_view$data, type = if (mode == "classification") "class" else "vector")
   observed <- test[[roles$outcome]]
   list(frame = f, fit = fit, observed = observed, predicted = predicted,
-       train_n = nrow(train), test_n = nrow(test), importance = importance_table(fit$variable.importance),
+       train_n = nrow(train), test_n = nrow(test),
+       importance = importance_table(relabel_importance(fit$variable.importance, train_view$labels)),
+       formula = formula,
        seed = seed, train_fraction = train_fraction, cp = cp, minsplit = minsplit)
 }
 
@@ -243,8 +286,9 @@ analyse_classification_tree <- function(data, roles, options) {
     plot_kind = "classification", plot_data = data.frame(Observed = x$observed, Predicted = x$predicted),
     extras = list(outcome = roles$outcome, predictors = roles$predictors, importance = x$importance),
     code = c("library(rpart)", ml_holdout_code(roles$outcome, roles$predictors, "classification", x$train_fraction, x$seed),
+             ml_formula_code(roles$outcome, roles$predictors, x$formula)$lines,
              sprintf("set.seed(%d)", x$seed),
-             sprintf("fit <- rpart(%s, data = training_data, method = \"class\", control = rpart.control(cp = %s, minsplit = %d))", formula_string(formula_from(roles$outcome, roles$predictors)), format(x$cp), x$minsplit),
+             sprintf("fit <- rpart(%s, data = training_data, method = \"class\", control = rpart.control(cp = %s, minsplit = %d))", ml_formula_code(roles$outcome, roles$predictors, x$formula)$formula, format(x$cp), x$minsplit),
              "predict(fit, newdata = holdout_data, type = \"class\")"),
     warnings = "Performance comes from one held-out portion of the supplied data, not from repeated resampling."
   )
@@ -259,8 +303,9 @@ analyse_regression_tree <- function(data, roles, options) {
     plot_kind = "ml_regression", plot_data = data.frame(Observed = x$observed, Predicted = x$predicted),
     extras = list(outcome = roles$outcome, predictors = roles$predictors),
     code = c("library(rpart)", ml_holdout_code(roles$outcome, roles$predictors, "regression", x$train_fraction, x$seed),
+             ml_formula_code(roles$outcome, roles$predictors, x$formula)$lines,
              sprintf("set.seed(%d)", x$seed),
-             sprintf("fit <- rpart(%s, data = training_data, method = \"anova\", control = rpart.control(cp = %s, minsplit = %d))", formula_string(formula_from(roles$outcome, roles$predictors)), format(x$cp), x$minsplit),
+             sprintf("fit <- rpart(%s, data = training_data, method = \"anova\", control = rpart.control(cp = %s, minsplit = %d))", ml_formula_code(roles$outcome, roles$predictors, x$formula)$formula, format(x$cp), x$minsplit),
              "predict(fit, newdata = holdout_data)"),
     warnings = "Performance comes from one held-out portion of the supplied data, not from repeated resampling."
   )
@@ -290,13 +335,16 @@ forest_prediction <- function(data, roles, options, mode = c("classification", "
   test <- f$data[split$test, , drop = FALSE]
   check_holdout_factor_levels(train, test, roles$predictors)
   formula <- formula_from(roles$outcome, roles$predictors)
+  train_view <- model_view(train, roles$outcome, roles$predictors)
+  test_view <- model_view(test, roles$outcome, roles$predictors)
   fit <- ranger::ranger(
-    formula, data = train, num.trees = trees,
+    train_view$formula, data = train_view$data, num.trees = trees,
     importance = "permutation", seed = seed, num.threads = 1, verbose = FALSE
   )
-  predicted <- predict(fit, data = test)$predictions
-  list(frame = f, fit = fit, observed = test[[roles$outcome]], predicted = predicted,
-       train_n = nrow(train), test_n = nrow(test), importance = importance_table(fit$variable.importance),
+  predicted <- predict(fit, data = test_view$data)$predictions
+  list(frame = f, fit = fit, observed = test[[roles$outcome]], predicted = predicted, formula = formula,
+       train_n = nrow(train), test_n = nrow(test),
+       importance = importance_table(relabel_importance(fit$variable.importance, train_view$labels)),
        seed = seed, train_fraction = train_fraction, trees = trees)
 }
 
@@ -309,7 +357,8 @@ analyse_random_forest_classification <- function(data, roles, options) {
     plot_kind = "classification", plot_data = data.frame(Observed = x$observed, Predicted = x$predicted),
     extras = list(outcome = roles$outcome, predictors = roles$predictors),
     code = c("library(ranger)", ml_holdout_code(roles$outcome, roles$predictors, "classification", x$train_fraction, x$seed),
-             sprintf("fit <- ranger(%s, data = training_data, num.trees = %d, importance = \"permutation\", seed = %d, num.threads = 1)", formula_string(formula_from(roles$outcome, roles$predictors)), x$trees, x$seed), "predict(fit, data = holdout_data)$predictions"),
+             ml_formula_code(roles$outcome, roles$predictors, x$formula)$lines,
+             sprintf("fit <- ranger(%s, data = training_data, num.trees = %d, importance = \"permutation\", seed = %d, num.threads = 1)", ml_formula_code(roles$outcome, roles$predictors, x$formula)$formula, x$trees, x$seed), "predict(fit, data = holdout_data)$predictions"),
     warnings = "Performance comes from one held-out portion of the supplied data, not from repeated resampling."
   )
 }
@@ -323,7 +372,8 @@ analyse_random_forest_regression <- function(data, roles, options) {
     plot_kind = "ml_regression", plot_data = data.frame(Observed = x$observed, Predicted = x$predicted),
     extras = list(outcome = roles$outcome, predictors = roles$predictors),
     code = c("library(ranger)", ml_holdout_code(roles$outcome, roles$predictors, "regression", x$train_fraction, x$seed),
-             sprintf("fit <- ranger(%s, data = training_data, num.trees = %d, importance = \"permutation\", seed = %d, num.threads = 1)", formula_string(formula_from(roles$outcome, roles$predictors)), x$trees, x$seed), "predict(fit, data = holdout_data)$predictions"),
+             ml_formula_code(roles$outcome, roles$predictors, x$formula)$lines,
+             sprintf("fit <- ranger(%s, data = training_data, num.trees = %d, importance = \"permutation\", seed = %d, num.threads = 1)", ml_formula_code(roles$outcome, roles$predictors, x$formula)$formula, x$trees, x$seed), "predict(fit, data = holdout_data)$predictions"),
     warnings = "Performance comes from one held-out portion of the supplied data, not from repeated resampling."
   )
 }
@@ -373,7 +423,7 @@ analyse_nearest_neighbors <- function(data, roles, options) {
              "spread <- apply(model_matrix[training_rows, , drop = FALSE], 2, sd)",
              "training_matrix <- sweep(sweep(model_matrix[training_rows, , drop = FALSE], 2, center), 2, spread, '/')",
              "holdout_matrix <- sweep(sweep(model_matrix[-training_rows, , drop = FALSE], 2, center), 2, spread, '/')",
-             sprintf("training_outcome <- model_data[[\"%s\"]][training_rows]", roles$outcome),
+             sprintf("training_outcome <- model_data[[%s]][training_rows]", r_str(roles$outcome)),
              sprintf("set.seed(%d)", seed),
              sprintf("predicted <- knn(training_matrix, holdout_matrix, training_outcome, k = %d)", neighbors)),
     warnings = "Performance comes from one held-out portion of the supplied data, not from repeated resampling."
@@ -495,10 +545,10 @@ analyse_elastic_net_classification <- function(data, roles, options) {
       "library(glmnet)",
       ml_holdout_code(roles$outcome, roles$predictors, "classification", x$train_fraction, x$seed),
       ml_matrix_code(roles$predictors),
-      sprintf("training_outcome <- model_data[[\"%s\"]][training_rows]", roles$outcome),
+      sprintf("training_outcome <- model_data[[%s]][training_rows]", r_str(roles$outcome)),
       sprintf("set.seed(%d)", x$seed),
       sprintf("fold_id <- integer(length(training_outcome)); groups <- split(seq_along(training_outcome), training_outcome, drop = TRUE); for (rows in groups) fold_id[rows] <- sample(rep(seq_len(%d), length.out = length(rows)))", x$folds),
-      sprintf("fit <- cv.glmnet(model_matrix[training_rows, , drop = FALSE], training_outcome, family = \"%s\", alpha = %.2f, foldid = fold_id)", x$family, x$alpha),
+      sprintf("fit <- cv.glmnet(model_matrix[training_rows, , drop = FALSE], training_outcome, family = %s, alpha = %.2f, foldid = fold_id)", r_str(x$family), x$alpha),
       "predict(fit, newx = model_matrix[-training_rows, , drop = FALSE], s = \"lambda.1se\", type = \"class\")"
     ),
     warnings = "The penalty was selected by cross-validation inside the training rows. The displayed score still comes from one held-out portion of the supplied data."
@@ -521,7 +571,7 @@ analyse_elastic_net_regression <- function(data, roles, options) {
       "library(glmnet)",
       ml_holdout_code(roles$outcome, roles$predictors, "regression", x$train_fraction, x$seed),
       ml_matrix_code(roles$predictors),
-      sprintf("training_outcome <- model_data[[\"%s\"]][training_rows]", roles$outcome),
+      sprintf("training_outcome <- model_data[[%s]][training_rows]", r_str(roles$outcome)),
       sprintf("set.seed(%d)", x$seed),
       sprintf("fold_id <- sample(rep(seq_len(%d), length.out = length(training_outcome)))", x$folds),
       sprintf("fit <- cv.glmnet(model_matrix[training_rows, , drop = FALSE], training_outcome, family = \"gaussian\", alpha = %.2f, foldid = fold_id)", x$alpha),
@@ -555,8 +605,10 @@ analyse_naive_bayes <- function(data, roles, options) {
   formula <- formula_from(roles$outcome, predictors)
   laplace <- as.numeric(options$naive_laplace %||% 1)
   if (length(laplace) != 1L || !is.finite(laplace) || laplace < 0) stop("The Laplace smoothing value must be zero or greater.")
-  fit <- e1071::naiveBayes(formula, data = training, laplace = laplace)
-  predicted <- stats::predict(fit, newdata = holdout, type = "class")
+  training_view <- model_view(training, roles$outcome, predictors)
+  holdout_view <- model_view(holdout, roles$outcome, predictors)
+  fit <- e1071::naiveBayes(training_view$formula, data = training_view$data, laplace = laplace)
+  predicted <- stats::predict(fit, newdata = holdout_view$data, type = "class")
   observed <- holdout[[roles$outcome]]
   priors <- fit$apriori / sum(fit$apriori)
   estimates <- data.frame(Category = names(priors), Training_share = as.numeric(priors), stringsAsFactors = FALSE)
@@ -570,7 +622,8 @@ analyse_naive_bayes <- function(data, roles, options) {
     code = c(
       "library(e1071)",
       ml_holdout_code(roles$outcome, roles$predictors, "classification", train_fraction, seed),
-      sprintf("fit <- naiveBayes(%s, data = training_data, laplace = %s)", formula_string(formula), format(laplace)),
+      ml_formula_code(roles$outcome, predictors, formula)$lines,
+      sprintf("fit <- naiveBayes(%s, data = training_data, laplace = %s)", ml_formula_code(roles$outcome, predictors, formula)$formula, format(laplace)),
       "predict(fit, newdata = holdout_data, type = \"class\")"
     ),
     warnings = "Naive Bayes treats predictors as conditionally independent within each outcome category. Performance comes from one held-out portion of the supplied data."
@@ -640,7 +693,7 @@ analyse_dbscan_clustering <- function(data, roles, options) {
     extras = list(variables = x$variables, eps = eps, min_points = min_points, membership = fit$cluster),
     code = c(
       "library(dbscan)",
-      sprintf("variables <- c(%s)", paste(sprintf("\"%s\"", x$variables), collapse = ", ")),
+      sprintf("variables <- c(%s)", paste(r_str(x$variables), collapse = ", ")),
       "model_data <- df[complete.cases(df[variables]), variables, drop = FALSE]",
       sprintf("fit <- dbscan(scale(model_data), eps = %s, minPts = %d)", format(eps), min_points),
       "table(fit$cluster)"
@@ -664,7 +717,7 @@ analyse_hdbscan_clustering <- function(data, roles, options) {
     extras = list(variables = x$variables, min_points = min_points, membership = membership, cluster = fit$cluster),
     code = c(
       "library(dbscan)",
-      sprintf("variables <- c(%s)", paste(sprintf("\"%s\"", x$variables), collapse = ", ")),
+      sprintf("variables <- c(%s)", paste(r_str(x$variables), collapse = ", ")),
       "model_data <- df[complete.cases(df[variables]), variables, drop = FALSE]",
       sprintf("fit <- hdbscan(scale(model_data), minPts = %d)", min_points),
       "table(fit$cluster)"

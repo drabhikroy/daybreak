@@ -85,11 +85,11 @@ body.palette-tritanopia {
   --purple: #4c9f70;
   --rose: #c45a3c;
 }
-/* Four steps rather than six. The two darkest entries of the earlier ramp
-   measured 2.96 and 1.94 against the page, so the palette offered for people
-   who cannot rely on hue was the only one that failed contrast. Repeating the
-   last two values keeps the six accent slots filled without introducing a
-   grey that cannot be seen. */
+/* Four steps rather than six. A fifth and sixth gray dark enough to differ
+   from the fourth fall below 3 to 1 against the page, which would make the
+   palette meant for people who cannot rely on hue the one that fails contrast.
+   Repeating two values keeps the six accent slots filled without introducing
+   a gray that cannot be seen. */
 body.palette-monochrome {
   --sun: #f5f7fa;
   --blue: #c9d0d9;
@@ -3245,7 +3245,7 @@ body.session-disconnected .connection-warning {
 
 /* Focus ------------------------------------------------------------------ */
 
-/* One focus treatment everywhere. The ring is drawn with outline plus an
+/* One focus treatment everywhere. The ring is made with outline plus an
    offset so it stays visible on top of a filled control, and it is never
    removed on mouse click, because a control that loses its ring when clicked
    is a control a keyboard user cannot follow. */
@@ -3355,7 +3355,7 @@ body.session-disconnected .connection-warning {
   --space-6: 38px;
   --space-7: 56px;
 
-  /* Two shadows rather than one. The flat card sits on the page; the lifted one
+  /* Two shadows instead of one. The flat card sits on the page; the lifted one
      is for things that float above it, and using the same shadow for both made
      everything read as the same distance away. */
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.16), 0 8px 24px rgba(0, 0, 0, 0.14);
@@ -3384,10 +3384,10 @@ body.light-mode {
 
 /* The answer ------------------------------------------------------------- */
 
-/* The finding used to sit third from the top, in body text, at the same size as
-   the paragraphs around it. A reader had to hunt for the sentence they came
-   for. It now leads, once, and the verdict is carried by a colour and a word
-   rather than left entirely to prose. */
+/* The finding leads, once, at a size that marks it as the answer, and the
+   verdict is carried by a color, an edge, and a word rather than left
+   entirely to prose. Set at body size among the other cards, it would leave
+   the reader hunting for the sentence they came for. */
 .answer-hero {
   position: relative;
   padding: var(--space-5) var(--space-5) var(--space-5) calc(var(--space-5) + 6px);
@@ -3493,8 +3493,8 @@ body.light-mode {
 /* Reading sequence -------------------------------------------------------- */
 
 /* The three parts of a result are numbered in the source order a reader should
-   take them in, and the numbers are drawn rather than written so they do not
-   interrupt a screen reader working through the prose. */
+   take them in, and the numbers come from CSS rather than the markup so they do
+   not interrupt a screen reader working through the prose. */
 .result-column-heading h2 {
   font-size: var(--step-3);
   letter-spacing: -0.01em;
@@ -3728,9 +3728,8 @@ body.light-mode {
 
 /* Empty states ------------------------------------------------------------ */
 
-/* An empty panel used to render as nothing at all, which reads as a fault
-   rather than as an absence. Each one now says what is missing and what would
-   fill it. */
+/* An empty panel that renders as nothing reads as a fault rather than as an
+   absence, so each one says what is missing and what would fill it. */
 .empty-state {
   display: flex;
   flex-direction: column;

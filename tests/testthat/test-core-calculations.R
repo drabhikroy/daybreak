@@ -133,9 +133,9 @@ testthat::test_that("randomized helpers leave the caller's random state alone", 
 })
 
 testthat::test_that("optional roles can be left empty", {
-  # An unset optional role arrives from the form as an empty string. Summarising
-  # a file without grouping it is the first thing most people do here, and it
-  # stopped with "undefined columns selected" until this was fixed.
+  # An unset optional role arrives from the form as an empty string.
+  # Summarizing a file without grouping it is the first thing most people do
+  # here, so all three spellings of "no group" are checked.
   iris_data <- load_sample("iris")
 
   testthat::expect_silent(
@@ -187,4 +187,40 @@ testthat::test_that("fitting a tree leaves the caller's random stream alone", {
                          list(outcome = "Species", predictors = c("Sepal.Length", "Petal.Length")),
                          list(random_seed = 7)))
   testthat::expect_identical(before, .Random.seed)
+})
+
+testthat::test_that("the default two-group t test is Welch's", {
+  # Welch is the default because unequal variances are the usual case, and it
+  # costs almost nothing when variances happen to be equal.
+  iris_data <- droplevels(load_sample("iris")[load_sample("iris")$Species != "setosa", ])
+  result <- run_analysis("independent_t", iris_data, list(outcome = "Sepal.Length", group = "Species"), list())
+  reference <- stats::t.test(Sepal.Length ~ Species, data = iris_data, var.equal = FALSE)
+  testthat::expect_identical(result$tests$Test[1], "Welch t")
+  testthat::expect_equal(result$tests$df[1], unname(reference$parameter))
+})
+
+testthat::test_that("omega squared and Hedges' g match their defining formulas", {
+  iris_data <- load_sample("iris")
+  table <- as.data.frame(summary(stats::aov(Sepal.Length ~ Species, data = iris_data))[[1]])
+  ss_between <- table[["Sum Sq"]][1]
+  ms_within <- table[["Mean Sq"]][2]
+  expected_omega <- (ss_between - 2 * ms_within) / (sum(table[["Sum Sq"]]) + ms_within)
+  testthat::expect_equal(omega_squared(table), expected_omega)
+
+  x <- iris_data$Sepal.Length[iris_data$Species == "versicolor"]
+  y <- iris_data$Sepal.Length[iris_data$Species == "virginica"]
+  pooled <- sqrt((49 * stats::var(x) + 49 * stats::var(y)) / 98)
+  # Hedges (1981): multiply d by 1 - 3 / (4 df - 1), with df = n1 + n2 - 2.
+  testthat::expect_equal(hedges_g(x, y), (mean(x) - mean(y)) / pooled * (1 - 3 / (4 * 98 - 1)))
+})
+
+testthat::test_that("McNemar's test refuses columns with different response categories", {
+  paired <- data.frame(
+    before = factor(rep(c("Smoker", "Nonsmoker"), each = 30)),
+    after = factor(rep(c("Employed", "Unemployed"), times = 30))
+  )
+  testthat::expect_error(
+    run_analysis("mcnemar", paired, list(before = "before", after = "after"), list()),
+    "same two response categories", fixed = TRUE
+  )
 })

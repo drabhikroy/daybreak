@@ -1,128 +1,76 @@
 # Changes
 
+## 0.10.1 - 2026-11-04
+
+- Quoted every column name written into an exported R script, so a name that
+  contains quotes or backticks stays a name and cannot run as code.
+- Escaped column names and other data-derived text in the Markdown, HTML,
+  Word, and PDF reports, so a name written as markup shows as plain text.
+- Refused session files and `.rds` and `.RData` data files on R releases before
+  4.4.0, which can run code hidden inside such files while reading them.
+- Fixed confirmatory factor analysis, structural equation models, and
+  mediation, which stopped with an internal error instead of fitting.
+- Fixed one-way ANOVA, classification and regression trees, random forests,
+  and naive Bayes for column names that contain spaces or symbols.
+- Limited exploratory factor analysis to the number of factors the selected
+  columns can identify, and left the factor count blank by default so Daybreak
+  chooses two, or one when the columns cannot support two.
+- Named the column in level-count messages instead of a generic phrase.
+- Started the quick-start example once the page has finished loading instead
+  of after a fixed delay.
+- Made the test suite runnable from any working directory, and started the
+  startup check in its own R process.
+- Added tests for script quoting, report escaping, renamed columns across
+  every method, the factor-count limit, and several calculation details.
+- Made the release workflow draft the release page for review instead of
+  publishing it.
+- Raised the installer's minimum R version to 4.2 to match `DESCRIPTION`, and
+  stated the R 4.4 requirement for saved sessions in the README.
+
 ## 0.10.0 - 2026-08-02
 
-### Fixed
-
-- Defined `DAYBREAK_VERSION` in a new `R/version.R` and removed the differently
-  named local variable in `app.R`. Four files referred to a constant that was
-  never defined, so the Markdown, HTML, Word, and PDF reports, the session file,
-  and the analysis bundle all stopped at the point of use.
-- Corrected the coding of the `lung` sample. `survival::veteran` records status
-  as 0 for censored and 1 for dead, and the previous mapping of levels 1 and 2
-  relabelled all 128 deaths as censored and turned the 9 censored rows into
-  missing values. The column then held a single observed level and never
-  appeared in the event status selector, so the survival example could not run.
-- Named the confidence level that was actually used. Interval bounds honored
-  the setting but every sentence described the result as a 95 percent interval.
-- Gave the statistical description and the everyday explanation one shared
-  coefficient selector. The two paragraphs could headline different predictors
-  from the same model, and on a ratio scale the previous rule could never
-  select a strong protective association.
-- Rebuilt the chart palettes for each theme. A single dark-tuned set was used
-  in both modes, so in light mode the standard gold measured 1.6 to 1 against
-  the plot background and the monochrome ramp measured 1.1 to 1.
-- Replaced the monochrome accents whose contrast measured 2.96 and 1.94 to 1
-  against the page. The palette offered for readers who cannot rely on hue was
-  the only one that failed.
-- Matched the displayed interval to the exported script. Linear models now use
-  t quantiles, which is what `confint(fit)` produces in the script the reader is
-  told to run.
-- Stopped a paired binary test from accepting two columns with different
-  response categories.
-- Corrected the moderation figure when the focal predictor is categorical, and
-  drew the fitted model rather than a loess smoother in the growth figure.
-- Read SPSS user-missing codes as missing values instead of ordinary categories.
-- Computed coefficient alpha from one consistent set of complete rows.
-- Restored the working directory before removing it in the bundle writer, and
-  resolved the report template from a recorded path rather than from whatever
-  the working directory happened to be.
-- Raised six interactive controls to the 44 pixel minimum, and corrected the
-  light mode secondary text color, which measured 3.39 to 1.
-- Added a focus trap to the modal dialogs, moved the data-fit reason into the
-  option label so a screen reader announces it, and completed the tab and panel
-  relationships.
-- Guarded the browser setup so it runs once per page rather than on every
-  reconnect.
-- Stopped an absent optional package from blocking startup. Only the six core
-  packages are now required to open the app.
-- Reported prediction outcome balance from the full analysis set rather than
-  from the holdout rows alone.
-- Made the plain-language helpers tolerate absent extras, so a session written
-  by an earlier release reopens instead of failing.
-- Rewrote the instructions sent to an optional local model. The earlier prompt
-  asked the model to explain the comparison with a concrete mental picture,
-  which is an invitation to invent one: an iris comparison came back described
-  as three piles of sand measured for height. The model is now given the picture
-  the application already produced and told to simplify its wording, with the
-  five section headings, a sentence budget, and a list of the wordings that went
-  wrong. The rewrite is also checked for structure now, not only for numbers, so
-  a reply that collapses the sections is discarded.
-- Corrected the moderation model, which did not center its numeric predictors
-  despite a check row that assumed it did. Each lower-order coefficient
-  described the outcome where the other predictor was zero, which for horsepower
-  or weight is not a car. The product term and its p-value are unchanged.
-- Wrapped the tree fit in the seed helper. rpart draws from the random stream
-  during its own cross-validation, so results depended on ambient session state
-  and running an analysis quietly moved the reader's random stream.
-- Allowed an optional role to be left empty. Summarising a file without grouping
-  it, which is the first thing most people do here, stopped with "undefined
-  columns selected".
-- Replaced the survival summary column names. The table shipped the survival
-  package's own headings, including n.max, n.start, and se(rmean), in an
-  application whose premise is statistics you can read. Values are unchanged and
-  the interval bounds now name the level that produced them.
-- Moved Pillai's trace into the tests table. MANOVA was the only method that put
-  its omnibus test under estimates, which placed the one number the reader
-  wanted beneath a heading saying it was something else.
-- Stated the event value in the survival checks table. Which value counts as the
-  event is the easiest thing to get backwards in a survival analysis, and
-  getting it backwards inverts the curve without producing any error.
-- Corrected four stylesheet rules that targeted class names the markup never
-  emitted.
-
-### Added
-
-- ARIMA forecasting. The everyday explanation described a forecast band that
-  was never drawn, so the engine now produces one, with an interval at the
-  selected confidence level and a horizon capped at a quarter of the recorded
-  length. Monthly series continue on calendar months.
-- A notice above a result whose settings have moved on since it was produced,
-  with a control to run the analysis again.
-- Progress reporting while an analysis runs.
-- Command or Control with Return to run the analysis from anywhere on the page.
-- `tests/testthat/test-exports.R`, covering the six download paths. `R/exports.R`
-  had no test file, which is how the missing constant reached a release.
-- `tests/testthat/test-contrast.R`, which computes WCAG relative luminance for
-  every palette against every surface it can be drawn on, and checks the touch
-  target minimum in the stylesheet.
-- An answer panel at the top of every result, carrying the finding once at
-  display size with a verdict of clear, not clear, no evidence measure, or
-  summary. The verdict comes from the same function the prose uses, so it is a
-  second reading of one judgment rather than a new one.
-- Quick-start cards on the opening screen. Each loads an example with its
-  columns already assigned and runs it, so a first-time reader sees a finished
-  result before learning what any control does.
-- A working indicator while Shiny recalculates, and empty states for the panels
-  that can legitimately have nothing to show.
-- A type and spacing scale, tabular figures wherever numbers are compared down a
-  column, and two shadow levels rather than one.
-
-### Changed
-
-- Removed the definition of `DAYBREAK_VERSION` from the test helper. The helper
-  had supplied a constant the running application never defined, so the export
-  and session tests passed against a value that did not exist at run time.
-- Corrected five test assertions that were checking for text the application no
-  longer contained.
-- Stated the version in every exported document rather than in Markdown alone.
-- Raised comment density from under 1 percent to about 10 percent, describing
-  the reasoning behind choices rather than restating the code.
-- Reworded large ratios in the everyday explanation. An odds ratio of 27.3 read
-  as "about 2,628.9% higher" and now reads as a multiple.
-- Described categorical coefficients as category contrasts rather than as
-  one-unit increases.
-- Rewrote the data-fit message, which was not a grammatical sentence.
+- Moved the version number into `R/version.R` so the session file, the
+  Markdown, HTML, Word, and PDF reports, and the analysis bundle all read it
+  from one place.
+- Corrected the event coding in the `lung` example so the 128 deaths count as
+  events and the example runs.
+- Named the selected confidence level in every interval sentence instead of a
+  fixed 95 percent.
+- Made the statistical description and the everyday explanation headline the
+  same coefficient, judged on the log scale for odds, rate, and hazard ratios.
+- Described large ratios as multiples and categorical coefficients as category
+  contrasts in the everyday explanation.
+- Centered numeric predictors in moderation so each lower-order coefficient
+  reads at the average of the other predictor, and wrote the centering into the
+  exported script.
+- Matched linear model intervals to `confint(fit)` in the exported script.
+- Added ARIMA forecasting with an interval at the selected level, a horizon
+  capped at a quarter of the series, and calendar months for monthly data.
+- Allowed optional roles to stay empty, so descriptives run without a grouping
+  column.
+- Required matching response categories for McNemar's test.
+- Read SPSS user-missing codes as missing values.
+- Computed coefficient alpha from one set of complete rows.
+- Gave the survival summary table readable column names and stated the event
+  value in the checks.
+- Moved Pillai's trace into the tests table for MANOVA.
+- Ran tree fitting inside the local seed so it leaves the session random
+  stream alone, and set the same seed in the exported script.
+- Drew the fitted model in the growth figure and handled a categorical focal
+  predictor in the moderation figure.
+- Added separate chart palettes for the light theme and rebuilt monochrome as
+  four steps, all measured above 3 to 1 against every surface.
+- Raised interactive controls to 44 pixels, darkened light mode secondary text,
+  added a focus trap to dialogs, and put the data-fit reason in the option
+  label for screen readers.
+- Added an answer panel with a verdict at the top of each result, quick-start
+  examples on the opening screen, a notice when settings change after a run, a
+  progress indicator, and Command or Control with Return to run.
+- Rewrote the local model instructions to keep the five explanation sections
+  and the existing picture, and rejected rewrites that drop a section or change
+  a number.
+- Limited the installer's hard stop to the six core packages.
+- Added export and contrast tests, and CI and release workflows.
 
 ## 0.9.2 - 2026-08-02
 

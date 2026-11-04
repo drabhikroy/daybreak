@@ -9,10 +9,10 @@ run_analysis <- function(method_id, data, roles, options = list()) {
   if (is.null(spec)) stop("The selected analysis is not in the catalog.")
   absent <- missing_packages(spec)
   if (length(absent)) {
-    cmd <- sprintf("install.packages(c(%s))", paste(sprintf("\"%s\"", absent), collapse = ", "))
+    cmd <- sprintf("install.packages(c(%s))", paste(r_str(absent), collapse = ", "))
     stop(sprintf("%s needs: %s. Run %s and restart the app.", spec$name, paste(absent, collapse = ", "), cmd))
   }
-  # The same column filling two roles is almost always a slip rather than an
+  # The same column filling two roles is almost always a slip instead of an
   # intention, and it produces results that look plausible. Model syntax is
   # exempt because a lavaan model names its variables inside a string.
   duplicate_check_roles <- setdiff(names(roles), "model_syntax")
@@ -46,10 +46,10 @@ run_analysis <- function(method_id, data, roles, options = list()) {
 # a mean has no way to notice that.
 analyse_descriptives <- function(data, roles, options) {
   variables <- roles$variables
-  # An optional role arrives as an empty string when the reader has not chosen a
-  # column, and an empty string is not a column name. Leaving it in the vector
-  # meant that summarising a file without grouping it, which is the first thing
-  # most people do here, stopped with "undefined columns selected".
+  # An optional role arrives as an empty string when nobody has chosen a
+  # column, and an empty string is not a column name. Summarizing a file without
+  # grouping it is the first thing most people do here, so that case cannot be
+  # allowed to reach the column selection below.
   group <- roles$group %||% ""
   group <- if (length(group) == 1L && nzchar(group)) group else ""
   columns <- c(variables, if (nzchar(group)) group else NULL)
@@ -85,7 +85,7 @@ analyse_descriptives <- function(data, roles, options) {
     checks = check_row("Data coverage", "Reported by variable", "Each row of the table states its complete and missing counts.", "note"),
     plot_kind = "distributions", plot_data = data[, unique(columns), drop = FALSE],
     extras = list(variables = variables, group = group),
-    code = c(sprintf("variables <- c(%s)", paste(sprintf("\"%s\"", variables), collapse = ", ")),
+    code = c(sprintf("variables <- c(%s)", paste(r_str(variables), collapse = ", ")),
              "summary(df[variables])")
   )
 }
@@ -113,7 +113,7 @@ analyse_frequencies <- function(data, roles, options) {
     checks = check_row("Denominator", "Includes displayed categories", "Percentages use the count within each split, including missing when shown.", "note"),
     plot_kind = "frequencies", plot_data = estimates,
     extras = list(variables = variables, split = split_var),
-    code = c(sprintf("variables <- c(%s)", paste(sprintf("\"%s\"", variables), collapse = ", ")),
+    code = c(sprintf("variables <- c(%s)", paste(r_str(variables), collapse = ", ")),
              "lapply(df[variables], table, useNA = 'ifany')")
   )
 }
@@ -142,7 +142,7 @@ analyse_missingness <- function(data, roles, options) {
     checks = check_row("Missing-data cause", "Not identified", "The pattern can be described from the file, but its cause needs subject-matter knowledge.", "warn"),
     plot_kind = "missingness", plot_data = estimates,
     extras = list(patterns = head(pattern_table, 20), variables = variables),
-    code = c(sprintf("variables <- c(%s)", paste(sprintf("\"%s\"", variables), collapse = ", ")),
+    code = c(sprintf("variables <- c(%s)", paste(r_str(variables), collapse = ", ")),
              "colMeans(is.na(df[variables]))")
   )
 }
@@ -170,10 +170,10 @@ analyse_one_sample_t <- function(data, roles, options) {
   result_record("one_sample_t", f$used, f$omitted, est, tests,
                 checks = normality_check(x), plot_kind = "one_numeric", plot_data = f$data,
                 extras = list(outcome = roles$outcome, reference = mu),
-                code = sprintf("t.test(df[[\"%s\"]], mu = %s, conf.level = %s)", roles$outcome, mu, level))
+                code = sprintf("t.test(df[[%s]], mu = %s, conf.level = %s)", r_str(roles$outcome), mu, level))
 }
 
-# Welch is the default rather than the pooled test. Equal variances are an
+# Welch is the default instead of the pooled test. Equal variances are an
 # assumption most datasets do not meet, Welch costs almost nothing when they
 # do, and the pooled test is wrong when they do not. The form still offers the
 # pooled version for a reader replicating published work that used it.
@@ -219,7 +219,7 @@ analyse_paired_t <- function(data, roles, options) {
                 checks = normality_check(after - before, "Paired differences"),
                 plot_kind = "paired", plot_data = f$data,
                 extras = list(before = roles$before, after = roles$after),
-                code = sprintf("t.test(df[[\"%s\"]], df[[\"%s\"]], paired = TRUE, conf.level = %s)", roles$after, roles$before, confidence_level(options)))
+                code = sprintf("t.test(df[[%s]], df[[%s]], paired = TRUE, conf.level = %s)", r_str(roles$after), r_str(roles$before), confidence_level(options)))
 }
 
 # The rank tests report a Hodges-Lehmann shift alongside the p-value. A rank
@@ -275,18 +275,24 @@ analyse_paired_wilcoxon <- function(data, roles, options) {
   result_record("paired_wilcoxon", f$used, f$omitted, est, tests,
                 checks = check_row("Difference shape", "Symmetry is assumed", "The signed-rank test reads the paired-difference distribution as roughly symmetric.", "note"),
                 plot_kind = "paired", plot_data = f$data, extras = list(before = roles$before, after = roles$after),
-                code = sprintf("wilcox.test(df[[\"%s\"]], df[[\"%s\"]], paired = TRUE, exact = FALSE, conf.int = TRUE, conf.level = %s)", roles$after, roles$before, confidence_level(options)))
+                code = sprintf("wilcox.test(df[[%s]], df[[%s]], paired = TRUE, exact = FALSE, conf.int = TRUE, conf.level = %s)", r_str(roles$after), r_str(roles$before), confidence_level(options)))
 }
 
 analyse_one_way_anova <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$group))
-  need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$group]], 2)
+  need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$group]], 2, label = column_label(roles$group))
   need_variation(f$data, roles$outcome, "One-way ANOVA")
   f$data[[roles$group]] <- as_group(f$data[[roles$group]])
   need_group_sizes(f$data[[roles$group]], 2L)
-  form <- formula_from(roles$outcome, roles$group)
-  need_model_matrix(form, f$data, 2L)
-  model <- stats::aov(form, data = f$data)
+  # TukeyHSD() looks the factor up again through model.tables(), and that
+  # lookup cannot find a column whose name needs backticks, so a group called
+  # "study group" would stop the analysis. The model is fitted on two fixed
+  # internal names instead. Every table and sentence still carries the reader's
+  # own column names, and the exported script builds the same two-column frame.
+  fit_data <- data.frame(outcome = f$data[[roles$outcome]], group = f$data[[roles$group]])
+  form <- stats::as.formula("outcome ~ group")
+  need_model_matrix(form, fit_data, 2L)
+  model <- stats::aov(form, data = fit_data)
   tab <- as.data.frame(summary(model)[[1]])
   test <- data.frame(Test = "One-way ANOVA", Statistic = tab[["F value"]][1], df1 = tab[["Df"]][1],
                      df2 = tab[["Df"]][2], p = tab[["Pr(>F)"]][1])
@@ -298,12 +304,14 @@ analyse_one_way_anova <- function(data, roles, options) {
   result_record("one_way_anova", f$used, f$omitted, est, test, checks = checks, model = model,
                 plot_kind = "group_numeric", plot_data = f$data,
                 extras = list(outcome = roles$outcome, group = roles$group, pairwise = tukey),
-                code = c(sprintf("fit <- aov(%s, data = df)", formula_string(form)), "summary(fit)", "TukeyHSD(fit)"))
+                code = c(sprintf("fit_data <- data.frame(outcome = df[[%s]], group = factor(df[[%s]]))", r_str(roles$outcome), r_str(roles$group)),
+                         "fit_data <- fit_data[complete.cases(fit_data), ]",
+                         "fit <- aov(outcome ~ group, data = fit_data)", "summary(fit)", "TukeyHSD(fit)"))
 }
 
 analyse_welch_anova <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$group))
-  need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$group]], 2)
+  need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$group]], 2, label = column_label(roles$group))
   need_variation(f$data, roles$outcome, "Welch ANOVA")
   need_group_sizes(f$data[[roles$group]], 2L)
   form <- formula_from(roles$outcome, roles$group)
@@ -319,7 +327,7 @@ analyse_welch_anova <- function(data, roles, options) {
 
 analyse_kruskal_wallis <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$group))
-  need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$group]], 2)
+  need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$group]], 2, label = column_label(roles$group))
   need_variation(f$data, roles$outcome, "Kruskal-Wallis analysis")
   form <- formula_from(roles$outcome, roles$group)
   test <- stats::kruskal.test(form, data = f$data)
@@ -337,7 +345,7 @@ analyse_kruskal_wallis <- function(data, roles, options) {
 # duplicated cell stops the analysis and names the problem instead.
 analyse_repeated_anova <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$within, roles$id))
-  need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$within]], 2)
+  need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$within]], 2, label = column_label(roles$within))
   need_variation(f$data, roles$outcome, "Repeated-measures ANOVA")
   need_repeated_cells(f$data, roles$id, roles$within)
   form_text <- sprintf("%s ~ %s + Error(%s/%s)", bt(roles$outcome), bt(roles$within), bt(roles$id), bt(roles$within))
@@ -367,7 +375,7 @@ analyse_repeated_anova <- function(data, roles, options) {
 analyse_chi_square <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$row, roles$column))
   tab <- table(f$data[[roles$row]], f$data[[roles$column]])
-  need_levels(f$data[[roles$row]], 2); need_levels(f$data[[roles$column]], 2)
+  need_levels(f$data[[roles$row]], 2, label = column_label(roles$row)); need_levels(f$data[[roles$column]], 2, label = column_label(roles$column))
   test <- suppressWarnings(stats::chisq.test(tab, correct = FALSE))
   tests <- data.frame(Test = "Pearson chi-square", Statistic = unname(test$statistic),
                       df = unname(test$parameter), p = test$p.value)
@@ -383,7 +391,7 @@ analyse_chi_square <- function(data, roles, options) {
                 plot_kind = "contingency", plot_data = as.data.frame(tab),
                 extras = list(row = roles$row, column = roles$column, observed = as.data.frame.matrix(tab),
                               expected = as.data.frame.matrix(test$expected), residuals = as.data.frame.matrix(test$stdres)),
-                code = sprintf("chisq.test(table(df[[\"%s\"]], df[[\"%s\"]]), correct = FALSE)", roles$row, roles$column))
+                code = sprintf("chisq.test(table(df[[%s]], df[[%s]]), correct = FALSE)", r_str(roles$row), r_str(roles$column)))
 }
 
 # Fisher's exact test grows very quickly with table size, so a large table is
@@ -392,7 +400,7 @@ analyse_chi_square <- function(data, roles, options) {
 analyse_fisher_exact <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$row, roles$column))
   tab <- table(f$data[[roles$row]], f$data[[roles$column]])
-  need_levels(f$data[[roles$row]], 2); need_levels(f$data[[roles$column]], 2)
+  need_levels(f$data[[roles$row]], 2, label = column_label(roles$row)); need_levels(f$data[[roles$column]], 2, label = column_label(roles$column))
   # Anything larger than 2 by 2 goes to Monte Carlo. The exact calculation on a
   # bigger table can take longer than a reader will wait, with no warning that
   # it is going to.
@@ -412,14 +420,14 @@ analyse_fisher_exact <- function(data, roles, options) {
                 plot_kind = "contingency", plot_data = as.data.frame(tab),
                 extras = list(row = roles$row, column = roles$column, observed = as.data.frame.matrix(tab)),
                 code = c(if (simulated) "set.seed(2026)" else character(0),
-                         sprintf("fisher.test(table(df[[\"%s\"]], df[[\"%s\"]]), simulate.p.value = %s%s)",
-                                 roles$row, roles$column, simulated,
+                         sprintf("fisher.test(table(df[[%s]], df[[%s]]), simulate.p.value = %s%s)",
+                                 r_str(roles$row), r_str(roles$column), simulated,
                                  if (simulated) sprintf(", B = %d", simulations) else "")))
 }
 
 analyse_mcnemar <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$before, roles$after))
-  need_levels(f$data[[roles$before]], 2, 2); need_levels(f$data[[roles$after]], 2, 2)
+  need_levels(f$data[[roles$before]], 2, 2, label = column_label(roles$before)); need_levels(f$data[[roles$after]], 2, 2, label = column_label(roles$after))
   # A paired binary test compares the same two response options measured twice.
   # Without this check the app happily crossed, say, smoking status against
   # employment status and reported a p-value for a table that means nothing.
@@ -443,7 +451,7 @@ analyse_mcnemar <- function(data, roles, options) {
                 ),
                 plot_kind = "contingency", plot_data = as.data.frame(tab),
                 extras = list(before = roles$before, after = roles$after, observed = as.data.frame.matrix(tab)),
-                code = sprintf("mcnemar.test(table(df[[\"%s\"]], df[[\"%s\"]]))", roles$before, roles$after))
+                code = sprintf("mcnemar.test(table(df[[%s]], df[[%s]]))", r_str(roles$before), r_str(roles$after)))
 }
 
 # Proportion intervals come from prop.test, which applies the Wilson score
@@ -470,8 +478,8 @@ analyse_one_proportion <- function(data, roles, options) {
   result_record("one_proportion", f$used, f$omitted, estimates, tests, checks = checks,
                 plot_kind = "proportion", plot_data = estimates,
                 extras = list(outcome = roles$outcome, event = binary$event, reference = reference),
-                code = c(sprintf("complete <- !is.na(df[[\"%s\"]])", roles$outcome),
-                         sprintf("outcome <- droplevels(factor(df[[\"%s\"]][complete]))", roles$outcome),
+                code = c(sprintf("complete <- !is.na(df[[%s]])", r_str(roles$outcome)),
+                         sprintf("outcome <- droplevels(factor(df[[%s]][complete]))", r_str(roles$outcome)),
                          sprintf("prop.test(sum(outcome == levels(outcome)[2]), length(outcome), p = %s, correct = %s, conf.level = %s)",
                                  reference, isTRUE(options$continuity_correction), confidence_level(options))))
 }
@@ -500,8 +508,8 @@ analyse_two_proportions <- function(data, roles, options) {
   result_record("two_proportions", f$used, f$omitted, estimates, tests, checks = checks,
                 plot_kind = "proportion", plot_data = plot_data,
                 extras = list(outcome = roles$outcome, group = roles$group, event = binary$event, proportions = plot_data),
-                code = c(sprintf("complete <- complete.cases(df[c(\"%s\", \"%s\")])", roles$outcome, roles$group),
-                         sprintf("tab <- table(df[[\"%s\"]][complete], df[[\"%s\"]][complete])", roles$group, roles$outcome),
+                code = c(sprintf("complete <- complete.cases(df[c(%s, %s)])", r_str(roles$outcome), r_str(roles$group)),
+                         sprintf("tab <- table(df[[%s]][complete], df[[%s]][complete])", r_str(roles$group), r_str(roles$outcome)),
                          sprintf("prop.test(tab[, 2], rowSums(tab), correct = %s, conf.level = %s)",
                                  isTRUE(options$continuity_correction), confidence_level(options))))
 }
@@ -542,7 +550,7 @@ analyse_factorial_anova <- function(data, roles, options) {
 
 analyse_friedman <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$within, roles$id))
-  need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$within]], 2)
+  need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$within]], 2, label = column_label(roles$within))
   need_variation(f$data, roles$outcome, "Friedman analysis")
   need_repeated_cells(f$data, roles$id, roles$within)
   form <- stats::as.formula(sprintf("%s ~ %s | %s", bt(roles$outcome), bt(roles$within), bt(roles$id)))
@@ -578,7 +586,7 @@ analyse_correlation <- function(data, roles, options) {
                 checks = check_row("Interpretation", "Association only", "A correlation does not by itself establish direction or cause.", "warn"),
                 plot_kind = "correlation", plot_data = matrix,
                 extras = list(variables = variables, cor_method = method, matrix = matrix),
-                code = sprintf("cor(df[c(%s)], use = 'complete.obs', method = '%s')", paste(sprintf("\"%s\"", variables), collapse = ", "), method))
+                code = sprintf("cor(df[c(%s)], use = 'complete.obs', method = '%s')", paste(r_str(variables), collapse = ", "), method))
 }
 
 # A partial correlation is the correlation of two sets of residuals, so it is
@@ -619,7 +627,7 @@ analyse_partial_correlation <- function(data, roles, options) {
                 ),
                 plot_kind = "partial", plot_data = data.frame(x = rx, y = ry),
                 extras = list(x = roles$x, y = roles$y, controls = controls),
-                code = c(sprintf("columns <- c(%s)", paste(sprintf("\"%s\"", columns), collapse = ", ")),
+                code = c(sprintf("columns <- c(%s)", paste(r_str(columns), collapse = ", ")),
                          "working <- df[complete.cases(df[columns]), columns, drop = FALSE]",
                          if (identical(method, "spearman")) "working[] <- lapply(working, rank, ties.method = 'average')" else character(0),
                          sprintf("rx <- resid(lm(%s, data = working))", formula_string(formula_from(roles$x, controls))),
@@ -663,7 +671,7 @@ analyse_moderation <- function(data, roles, options) {
   need_variation(f$data, roles$outcome, "Moderation analysis")
   for (name in c(roles$focal, roles$moderator)) {
     if (is.numeric(f$data[[name]]) && stats::sd(f$data[[name]]) == 0) stop(sprintf("%s has no variation and cannot enter an interaction.", name))
-    if (!is.numeric(f$data[[name]])) need_levels(f$data[[name]], 2)
+    if (!is.numeric(f$data[[name]])) need_levels(f$data[[name]], 2, label = column_label(name))
   }
 
   # Numeric predictors in an interaction are mean-centered first. Without it the
@@ -714,7 +722,7 @@ analyse_moderation <- function(data, roles, options) {
                               controls = controls, interaction = interaction, formula = formula_string(form),
                               centered = centered, centers = centers),
                 code = c(
-                  vapply(centered, function(name) sprintf("df[[\"%s\"]] <- df[[\"%s\"]] - mean(df[[\"%s\"]], na.rm = TRUE)", name, name, name), character(1)),
+                  vapply(centered, function(name) sprintf("df[[%s]] <- df[[%s]] - mean(df[[%s]], na.rm = TRUE)", r_str(name), r_str(name), r_str(name)), character(1)),
                   sprintf("fit <- lm(%s, data = df)", formula_string(form)), "summary(fit)",
                   sprintf("confint(fit, level = %s)", confidence_level(options))))
 }
@@ -753,7 +761,7 @@ analyse_logistic_regression <- function(data, roles, options) {
   result_record("logistic_regression", f$used, f$omitted, coefs, fit = fit, checks = checks, model = model,
                 plot_kind = "logistic", plot_data = data.frame(Observed = binary$value, Predicted = predicted),
                 extras = list(outcome = roles$outcome, predictors = roles$predictors, event = binary$event, formula = formula_string(form)),
-                code = c(sprintf("df$.daybreak_outcome <- as.integer(factor(df[[\"%s\"]])) - 1", roles$outcome),
+                code = c(sprintf("df$.daybreak_outcome <- as.integer(factor(df[[%s]])) - 1", r_str(roles$outcome)),
                          sprintf("fit <- glm(%s, data = df, family = binomial())", formula_string(form)),
                          sprintf("exp(cbind(odds_ratio = coef(fit), confint.default(fit, level = %s)))", confidence_level(options))))
 }

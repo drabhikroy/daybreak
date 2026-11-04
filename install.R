@@ -1,7 +1,7 @@
 # Install Daybreak dependencies.
 
-if (getRversion() < "4.0.0") {
-  stop("Daybreak needs R 4.0 or later. Update R, then run this installer again.")
+if (getRversion() < "4.2.0") {
+  stop("Daybreak needs R 4.2 or later. Update R, then run this installer again.")
 }
 
 # Use a library owned by the person running Daybreak. This avoids a system

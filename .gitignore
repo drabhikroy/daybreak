@@ -10,3 +10,5 @@ report/*_files/
 report/*.html
 report/*.docx
 report/*.pdf
+Rplots.pdf
+tests/testthat/testthat-problems.rds

@@ -128,6 +128,7 @@ read_daybreak_session <- function(path) {
   info <- file.info(path)
   if (!nrow(info) || !is.finite(info$size) || info$size <= 0) stop("The selected session file is empty.")
   if (info$size > 200 * 1024^2) stop("The selected session file is larger than the 200 MB app limit.")
+  require_safe_deserialization("a session file")
   x <- tryCatch(
     readRDS(path, refhook = function(...) stop("The session contains an unsupported external reference.")),
     error = function(e) stop(sprintf("Daybreak could not read this session file: %s", conditionMessage(e)))

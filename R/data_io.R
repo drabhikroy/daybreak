@@ -98,16 +98,16 @@ read_uploaded_data <- function(path, original_name, sheet = NULL,
     xls = readxl::read_excel(path, sheet = sheet %||% 1, .name_repair = "unique"),
     ods = readODS::read_ods(path, sheet = sheet %||% 1, col_names = TRUE),
     # user_na is left at its default so that SPSS user-missing codes such as
-    # 97, 98, and 99 arrive as NA. Reading them as values turned "Refused" and
-    # "Not applicable" into ordinary categories, which quietly moved means and
-    # inflated category counts.
+    # 97, 98, and 99 arrive as NA. Read as values, "Refused" and "Not
+    # applicable" would become ordinary categories and quietly shift means and
+    # category counts.
     sav = haven::read_sav(path),
     zsav = haven::read_sav(path),
     por = haven::read_por(path),
     dta = haven::read_dta(path),
     sas7bdat = haven::read_sas(path),
     xpt = haven::read_xpt(path),
-    rds = readRDS(path),
+    rds = { require_safe_deserialization(".rds files"); readRDS(path) },
     rdata = read_rdata_frame(path),
     rda = read_rdata_frame(path),
     json = jsonlite::fromJSON(path, flatten = TRUE),
@@ -117,7 +117,22 @@ read_uploaded_data <- function(path, original_name, sheet = NULL,
   clean_imported_data(x)
 }
 
+# R releases before 4.4.0 can run code hidden in a crafted .rds or .RData file
+# while it is being read (CVE-2024-27322). Data and session files are exactly
+# the kind of thing people send each other, so on an affected R the app
+# declines to open them and says how to proceed, instead of trusting the file.
+require_safe_deserialization <- function(what, version = getRversion()) {
+  if (version < "4.4.0") {
+    stop(sprintf(
+      "Opening %s needs R 4.4.0 or later. Earlier versions of R can run code hidden inside a crafted file of this kind. Update R, or save the data as a CSV file and open that instead.",
+      what
+    ))
+  }
+  invisible(TRUE)
+}
+
 read_rdata_frame <- function(path) {
+  require_safe_deserialization(".RData files")
   box <- new.env(parent = emptyenv())
   object_names <- load(path, envir = box)
   frames <- object_names[vapply(object_names, function(nm) is.data.frame(box[[nm]]), logical(1))]
@@ -231,11 +246,10 @@ load_sample <- function(id) {
     orthodont = as.data.frame(nlme::Orthodont),
     political = lavaan::PoliticalDemocracy,
     lung = {
-      # survival::veteran codes status as 0 for censored and 1 for dead. An
-      # earlier release mapped levels 1 and 2, which relabelled all 128 deaths
-      # as censored and turned the 9 genuinely censored rows into NA. The
-      # column then held one observed level, so it never appeared in the event
-      # status selector and the example could not be run at all.
+      # survival::veteran codes status as 0 for censored and 1 for dead. Any
+      # other mapping turns the deaths into censored rows and leaves the column
+      # with a single observed level, which keeps it out of the event status
+      # selector.
       d <- survival::veteran
       d$status <- factor(d$status, levels = c(0, 1), labels = c("Censored", "Event"))
       d
@@ -274,7 +288,7 @@ display_type <- function(x) {
 # A compact profile of the loaded columns, used for the role menus and the
 # feasibility hints. Numeric columns with very few distinct values are listed
 # as categorical as well as numeric, because a variable coded 1 through 5 is
-# usually a rating and is sometimes a count, and the reader knows which.
+# usually a rating and is sometimes a count, and only the analyst knows which.
 data_signature <- function(data) {
   numeric <- names(data)[vapply(data, is.numeric, logical(1))]
   categorical <- names(data)[vapply(data, function(x) {

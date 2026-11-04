@@ -34,7 +34,7 @@ analyse_negative_binomial <- function(data, roles, options) {
 # anything, and the transformed number is the one they were after.
 analyse_multinomial_regression <- function(data, roles, options) {
   columns <- c(roles$outcome, roles$predictors)
-  f <- complete_frame(data, columns); need_levels(f$data[[roles$outcome]], 3); need_n(f$used, 20)
+  f <- complete_frame(data, columns); need_levels(f$data[[roles$outcome]], 3, label = column_label(roles$outcome)); need_n(f$used, 20)
   f$data[[roles$outcome]] <- as_group(f$data[[roles$outcome]])
   form <- formula_from(roles$outcome, roles$predictors)
   need_model_matrix(form, f$data, 2L)
@@ -68,10 +68,10 @@ analyse_multinomial_regression <- function(data, roles, options) {
 # Proportional odds is assumed and stated rather than tested. A formal test of
 # the assumption on a small sample tends to reject for reasons unrelated to the
 # question, so the check table names the assumption and leaves the judgment
-# with the reader.
+# with the analyst.
 analyse_ordinal_regression <- function(data, roles, options) {
   columns <- c(roles$outcome, roles$predictors)
-  f <- complete_frame(data, columns); need_levels(f$data[[roles$outcome]], 3); need_n(f$used, 20)
+  f <- complete_frame(data, columns); need_levels(f$data[[roles$outcome]], 3, label = column_label(roles$outcome)); need_n(f$used, 20)
   outcome <- f$data[[roles$outcome]]
   observed_levels <- if (is.factor(outcome)) levels(droplevels(outcome)) else unique(as.character(outcome))
   requested_order <- as.character(options$ordinal_order %||% observed_levels)
@@ -104,8 +104,8 @@ analyse_ordinal_regression <- function(data, roles, options) {
                 model = model, plot_kind = "classification",
                 plot_data = data.frame(Observed = f$data[[roles$outcome]], Predicted = stats::predict(model, type = "class")),
                 extras = list(outcome = roles$outcome, predictors = roles$predictors, order = levels(outcome), formula = formula_string(form)),
-                code = c("library(MASS)", sprintf("df[[\"%s\"]] <- ordered(df[[\"%s\"]], levels = c(%s))", roles$outcome, roles$outcome,
-                                                     paste(sprintf("\"%s\"", requested_order), collapse = ", ")),
+                code = c("library(MASS)", sprintf("df[[%s]] <- ordered(df[[%s]], levels = c(%s))", r_str(roles$outcome), r_str(roles$outcome),
+                                                     paste(r_str(requested_order), collapse = ", ")),
                          sprintf("fit <- polr(%s, data = df, Hess = TRUE)", formula_string(form)), "summary(fit)"))
 }
 
@@ -170,7 +170,7 @@ analyse_pca <- function(data, roles, options) {
                 checks = check_row("Input scaling", "Variables standardized", "Each selected variable was centered and scaled before extraction.", "ok"),
                 model = model, plot_kind = "pca", plot_data = data.frame(model$x[, seq_len(min(2, ncol(model$x))), drop = FALSE]),
                 extras = list(variables = variables, loadings = loadings, selected = selected),
-                code = c(sprintf("variables <- c(%s)", paste(sprintf("\"%s\"", variables), collapse = ", ")),
+                code = c(sprintf("variables <- c(%s)", paste(r_str(variables), collapse = ", ")),
                          "model_data <- df[complete.cases(df[variables]), variables, drop = FALSE]",
                          "fit <- prcomp(model_data, center = TRUE, scale. = TRUE)", "summary(fit)", "fit$rotation"))
 }
@@ -208,7 +208,7 @@ analyse_kmeans_clustering <- function(data, roles, options) {
   result_record("kmeans_clustering", f$used, f$omitted, estimates = sizes, checks = checks, model = model,
                 plot_kind = "clusters", plot_data = cluster_projection(f$data, model$cluster),
                 extras = list(variables = variables, clusters = centers, centers = center_table, seed = seed),
-                code = c(sprintf("variables <- c(%s)", paste(sprintf("\"%s\"", variables), collapse = ", ")),
+                code = c(sprintf("variables <- c(%s)", paste(r_str(variables), collapse = ", ")),
                          "model_data <- df[complete.cases(df[variables]), variables, drop = FALSE]",
                          sprintf("set.seed(%d)", seed),
                          sprintf("fit <- kmeans(scale(model_data), centers = %d, nstart = 30)", centers), "fit"))
@@ -233,10 +233,17 @@ analyse_hierarchical_clustering <- function(data, roles, options) {
   result_record("hierarchical_clustering", f$used, f$omitted, estimates = sizes, checks = checks, model = model,
                 plot_kind = "clusters", plot_data = cluster_projection(f$data, membership),
                 extras = list(variables = variables, clusters = clusters, membership = membership),
-                code = c(sprintf("variables <- c(%s)", paste(sprintf("\"%s\"", variables), collapse = ", ")),
+                code = c(sprintf("variables <- c(%s)", paste(r_str(variables), collapse = ", ")),
                          "model_data <- df[complete.cases(df[variables]), variables, drop = FALSE]",
                          "fit <- hclust(dist(scale(model_data)), method = 'ward.D2')",
                          sprintf("cluster <- cutree(fit, k = %d)", clusters), "table(cluster)"))
+}
+
+# Largest factor count whose model still has nonnegative degrees of freedom.
+max_identified_factors <- function(p) {
+  k <- seq_len(max(1L, p - 1L))
+  ok <- k[((p - k)^2 - (p + k)) >= 0]
+  if (length(ok)) max(ok) else 0L
 }
 
 analyse_factor_analysis <- function(data, roles, options) {
@@ -245,8 +252,23 @@ analyse_factor_analysis <- function(data, roles, options) {
   f <- complete_frame(data, variables); need_numeric(f$data, variables); need_n(f$used, max(20, length(variables) + 2))
   no_variation <- variables[vapply(f$data, function(x) stats::sd(x) <= sqrt(.Machine$double.eps), logical(1))]
   if (length(no_variation)) stop(sprintf("Remove columns with no variation: %s.", paste(no_variation, collapse = ", ")))
-  factors <- as.integer(options$factors %||% min(2, length(variables) - 1))
-  if (length(factors) != 1L || is.na(factors) || factors < 1 || factors >= length(variables)) stop("The factor count must be at least 1 and smaller than the number of variables.")
+  # A common factor model with k factors on p columns has
+  # ((p - k)^2 - (p + k)) / 2 degrees of freedom, and below zero it is not
+  # identified. psych still returns a solution in that case, along with fit
+  # indices that look ordinary and mean nothing, so the count is bounded here.
+  # Three or four columns support one factor, five support two, six support
+  # three (Lawley and Maxwell, 1971).
+  identified <- max_identified_factors(length(variables))
+  # A blank field means the reader left the choice to the app.
+  requested <- suppressWarnings(as.integer(options$factors %||% NA))
+  factors <- if (length(requested) != 1L || is.na(requested)) min(2L, identified) else requested
+  if (length(factors) != 1L || is.na(factors) || factors < 1) stop("The factor count must be a whole number of at least 1.")
+  if (factors > identified) {
+    stop(sprintf(
+      "%d columns can support at most %d factor%s. Choose fewer factors or add columns.",
+      length(variables), identified, if (identified == 1L) "" else "s"
+    ))
+  }
   rotation <- options$rotation %||% "oblimin"
   if (!rotation %in% c("none", "varimax", "quartimax", "bentlerT", "equamax", "varimin", "geominT", "bifactor", "promax", "oblimin", "simplimax", "bentlerQ", "geominQ", "cluster")) stop("Choose a rotation supported by the factor-analysis engine.")
   model <- psych::fa(f$data, nfactors = factors, rotate = rotation, fm = options$factor_method %||% "minres", scores = "regression")
@@ -254,14 +276,22 @@ analyse_factor_analysis <- function(data, roles, options) {
   loadings$Variable <- rownames(loadings); rownames(loadings) <- NULL
   communalities <- data.frame(Variable = names(model$communality), Communality = unname(model$communality),
                               Uniqueness = unname(model$uniquenesses))
+  # A model with no spare degrees of freedom, such as one factor on three
+  # columns, fits its data exactly, and psych then returns no TLI or RMSEA at
+  # all. Each index is read on its own so a missing one shows as unavailable
+  # instead of shortening the column and stopping the analysis.
+  fit_index <- function(x) {
+    x <- suppressWarnings(as.numeric(x))
+    if (length(x) && is.finite(x[1])) x[1] else NA_real_
+  }
   fit <- data.frame(Metric = c("RMSR", "TLI", "RMSEA"),
-                    Value = c(model$rms, model$TLI, model$RMSEA[1]))
+                    Value = c(fit_index(model$rms), fit_index(model$TLI), fit_index(model$RMSEA)))
   checks <- check_row("Factor solution", if (isTRUE(model$Heywood)) "Heywood case detected" else "No Heywood case flagged",
                       "A Heywood case includes a negative uniqueness or a loading outside an admissible range.", if (isTRUE(model$Heywood)) "warn" else "ok")
   result_record("factor_analysis", f$used, f$omitted, estimates = loadings, fit = fit, checks = checks,
                 model = model, plot_kind = "loadings", plot_data = loadings,
                 extras = list(variables = variables, factors = factors, rotation = rotation, communalities = communalities),
-                code = c("library(psych)", sprintf("variables <- c(%s)", paste(sprintf("\"%s\"", variables), collapse = ", ")),
+                code = c("library(psych)", sprintf("variables <- c(%s)", paste(r_str(variables), collapse = ", ")),
                          "model_data <- df[complete.cases(df[variables]), variables, drop = FALSE]",
                          sprintf("fit <- fa(model_data, nfactors = %d, rotate = '%s', fm = '%s')", factors, rotation, options$factor_method %||% "minres"), "print(fit$loadings)"))
 }
@@ -289,7 +319,7 @@ analyse_reliability <- function(data, roles, options) {
   result_record("reliability", f$used, f$omitted, estimates = estimates, fit = fit, checks = checks,
                 plot_kind = "reliability", plot_data = estimates,
                 extras = list(variables = variables, alpha = overall),
-                code = c(sprintf("variables <- c(%s)", paste(sprintf("\"%s\"", variables), collapse = ", ")),
+                code = c(sprintf("variables <- c(%s)", paste(r_str(variables), collapse = ", ")),
                          "items <- df[complete.cases(df[variables]), variables, drop = FALSE]",
                          "k <- ncol(items)", "alpha <- k/(k-1) * (1 - sum(sapply(items, var))/var(rowSums(items)))", "alpha"))
 }
@@ -313,7 +343,11 @@ lavaan_result <- function(kind, data, syntax, options, fit_call = c("cfa", "sem"
   args <- list(model = syntax, data = data, estimator = estimator, missing = missing,
                std.lv = TRUE, fixed.x = FALSE)
   if (length(ordered)) args$ordered <- ordered
-  model <- do.call(if (fit_call == "cfa") lavaan::cfa else lavaan::sem, args)
+  # The function is called by name from inside the lavaan namespace. lavaan
+  # inspects its own call with match.call() and expects a name in the function
+  # position, so handing do.call the function object itself breaks CFA, SEM,
+  # and mediation on lavaan releases that look at it.
+  model <- do.call(if (fit_call == "cfa") "cfa" else "sem", args, envir = asNamespace("lavaan"))
   if (!lavaan::lavInspect(model, "converged")) stop("The model did not converge. Review the syntax, variable distributions, and model identification.")
   pe <- lavaan::parameterEstimates(model, standardized = TRUE, ci = TRUE)
   keep <- pe$op %in% c("=~", "~", "~~", ":=")
@@ -334,7 +368,7 @@ lavaan_result <- function(kind, data, syntax, options, fit_call = c("cfa", "sem"
   )
   n_used <- sum(as.integer(lavaan::lavInspect(model, "nobs")))
   syntax_code <- paste(deparse(syntax, width.cutoff = 500L), collapse = "")
-  ordered_code <- if (length(ordered)) sprintf(", ordered = c(%s)", paste(sprintf("\"%s\"", ordered), collapse = ", ")) else ""
+  ordered_code <- if (length(ordered)) sprintf(", ordered = c(%s)", paste(r_str(ordered), collapse = ", ")) else ""
   result_record(kind, n_used, max(0, nrow(data) - n_used), estimates, fit = fit, checks = checks,
                 model = model, plot_kind = "lavaan", plot_data = estimates,
                 extras = list(syntax = syntax, estimator = estimator, modification_indices = head(lavaan::modindices(model, sort. = TRUE), 20)),
@@ -386,7 +420,7 @@ analyse_mediation <- function(data, roles, options) {
 
 # Clustered and repeated data ---------------------------------------------
 #
-# A convergence warning from lme4 stops the analysis rather than passing an
+# A convergence warning from lme4 stops the analysis instead of passing an
 # uncertain fit forward with a note attached. The reader of this app is not
 # well placed to judge how far a gradient of the reported size can be trusted,
 # and a result they cannot evaluate is worse than a message telling them the
@@ -492,7 +526,7 @@ analyse_hlm_logistic <- function(data, roles, options) {
                 plot_data = data.frame(Observed = binary$value, Predicted = stats::predict(model, type = "response")),
                 extras = list(outcome = roles$outcome, predictors = roles$predictors, cluster = roles$cluster,
                               random_slope = random_slope, event = binary$event, variance_components = as.data.frame(lme4::VarCorr(model)), formula = formula_string(form)),
-                code = c("library(lme4)", sprintf("df$.daybreak_outcome <- as.integer(factor(df[[\"%s\"]])) - 1", roles$outcome),
+                code = c("library(lme4)", sprintf("df$.daybreak_outcome <- as.integer(factor(df[[%s]])) - 1", r_str(roles$outcome)),
                          sprintf("fit <- glmer(%s, data = df, family = binomial())", formula_string(form)), "summary(fit)"))
 }
 
@@ -505,7 +539,7 @@ analyse_hlm_logistic <- function(data, roles, options) {
 # records, n.max, n.start, events, rmean, se(rmean), median, and a pair of
 # confidence bounds. Those are correct and they are not readable. An app that
 # promises statistics you can read should not put "se(rmean)" in front of
-# someone. The values are unchanged; only the headings are rewritten, and the
+# someone. The values pass through untouched. Only the headings change, and the
 # bounds name the level that produced them.
 survival_summary_table <- function(model, level, grouped) {
   raw <- summary(model)$table
@@ -581,13 +615,13 @@ analyse_kaplan_meier <- function(data, roles, options) {
                 checks = checks,
                 model = model, plot_kind = "survival", plot_data = plot_data,
                 extras = list(time = roles$time, status = roles$status, group = group, event = status$event),
-                code = c("library(survival)", sprintf("df$.event <- as.integer(factor(df[[\"%s\"]])) - 1", roles$status),
+                code = c("library(survival)", sprintf("df$.event <- as.integer(factor(df[[%s]])) - 1", r_str(roles$status)),
                          sprintf("fit <- survfit(%s, data = df)", formula_string(form)), "summary(fit)"))
 }
 
 # Proportional hazards is the assumption most often broken in practice and
 # least often checked, so the Schoenfeld residual test runs automatically and
-# reports into the check table rather than waiting to be asked for.
+# reports into the check table instead of waiting to be asked for.
 analyse_cox_regression <- function(data, roles, options) {
   columns <- c(roles$time, roles$status, roles$predictors)
   f <- complete_frame(data, columns); need_numeric(f$data, roles$time)
@@ -622,7 +656,7 @@ analyse_cox_regression <- function(data, roles, options) {
                 extras = list(time = roles$time, status = roles$status, predictors = roles$predictors,
                               event = status$event, proportional_hazards = ztab, formula = formula_string(form),
                               conf_level = confidence_level(options)),
-                code = c("library(survival)", sprintf("df$.event <- as.integer(factor(df[[\"%s\"]])) - 1", roles$status),
+                code = c("library(survival)", sprintf("df$.event <- as.integer(factor(df[[%s]])) - 1", r_str(roles$status)),
                          sprintf("fit <- coxph(%s, data = df)", formula_string(form)), "summary(fit)", "cox.zph(fit)"))
 }
 
@@ -714,7 +748,7 @@ analyse_time_series <- function(data, roles, options) {
   # is mostly the series mean with a very wide interval around it.
   horizon <- as.integer(options$forecast_horizon %||% 0L)
   if (length(horizon) != 1L || is.na(horizon) || horizon < 0L) stop("The forecast horizon must be zero or a positive whole number.")
-  # Capped rather than refused, so a reader who asks for too much still gets a
+  # Capped rather than refused, so someone who asks for too much still gets a
   # projection instead of an error. Past roughly a quarter of the recorded
   # length an ARIMA forecast is mostly the series mean with a very wide band.
   horizon <- min(horizon, max(0L, floor(f$used / 4)))
@@ -741,8 +775,8 @@ analyse_time_series <- function(data, roles, options) {
                 extras = list(outcome = roles$outcome, time = roles$time, order = order_vec,
                               frequency = frequency, horizon = horizon,
                               forecast = forecast_frame),
-                code = c(sprintf("complete <- complete.cases(df[c(\"%s\", \"%s\")])", roles$outcome, roles$time),
-                         sprintf("ordered_rows <- which(complete)[order(df[[\"%s\"]][complete])]", roles$time),
-                         sprintf("series <- ts(df[[\"%s\"]][ordered_rows], frequency = %d)", roles$outcome, frequency),
+                code = c(sprintf("complete <- complete.cases(df[c(%s, %s)])", r_str(roles$outcome), r_str(roles$time)),
+                         sprintf("ordered_rows <- which(complete)[order(df[[%s]][complete])]", r_str(roles$time)),
+                         sprintf("series <- ts(df[[%s]][ordered_rows], frequency = %d)", r_str(roles$outcome), frequency),
                          sprintf("fit <- arima(series, order = c(%s), method = 'ML')", paste(order_vec, collapse = ", ")), "fit"))
 }
