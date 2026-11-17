@@ -128,6 +128,9 @@ analysis_plot <- function(result, mode = "dark", palette = "standard") {
     survival = plot_survival(result, style),
     forest = plot_forest(result, style),
     time_series = plot_time_series(result, style),
+    equivalence = plot_equivalence(result, style),
+    agreement = plot_agreement(result, style),
+    meta = plot_meta(result, style),
     ggplot2::ggplot() + ggplot2::annotate("text", x = 0, y = 0, label = "No chart is available for this result.")
   )
   p + theme_daybreak(style)
@@ -216,12 +219,21 @@ plot_repeated <- function(result, style) {
     ggplot2::labs(title = "Repeated measurements", subtitle = "Faint lines show cases; the bright line joins condition means.", x = within, y = outcome)
 }
 
+# Counts sit on a small plate in the surface color. Text placed straight on
+# the tile would have to stay readable against every shade the fill scale can
+# produce, and no single text color does that in both themes.
+count_labels <- function(style) {
+  ggplot2::geom_label(ggplot2::aes(label = .data$Count), color = style$text, fill = style$surface,
+                      fontface = "bold", size = 4, label.size = 0,
+                      label.padding = ggplot2::unit(0.32, "lines"), label.r = ggplot2::unit(0.3, "lines"))
+}
+
 plot_contingency <- function(result, style) {
   d <- result$plot_data
   names(d)[1:3] <- c("Row", "Column", "Count")
   ggplot2::ggplot(d, ggplot2::aes(x = .data$Column, y = .data$Row, fill = .data$Count)) +
     ggplot2::geom_tile(color = style$background, linewidth = 2) +
-    ggplot2::geom_text(ggplot2::aes(label = .data$Count), color = style$text, fontface = "bold", size = 4) +
+    count_labels(style) +
     ggplot2::scale_fill_gradient(low = style$surface, high = style$colors[1]) +
     ggplot2::labs(title = "Observed cell counts", x = result$extras$column %||% result$extras$after,
                   y = result$extras$row %||% result$extras$before, fill = "Count")
@@ -508,4 +520,74 @@ plot_time_series <- function(result, style) {
       x = result$extras$time, y = result$extras$outcome, color = NULL, linetype = NULL
     )
   p
+}
+
+# The margin is a band and the estimate is a bar, so the answer is whether the
+# bar sits inside the band. That is the whole test, and the figure shows it
+# without needing either p-value.
+plot_equivalence <- function(result, style) {
+  e <- result$estimates[1, ]
+  ggplot2::ggplot(e, ggplot2::aes(y = 1)) +
+    ggplot2::annotate("rect", xmin = e$Margin_low, xmax = e$Margin_high, ymin = -Inf, ymax = Inf,
+                      fill = style$colors[2], alpha = 0.16) +
+    ggplot2::geom_vline(xintercept = c(e$Margin_low, e$Margin_high), color = style$colors[2], linetype = "22", linewidth = 0.8) +
+    ggplot2::geom_vline(xintercept = 0, color = style$muted, linewidth = 0.5) +
+    ggplot2::geom_errorbarh(ggplot2::aes(xmin = .data$Lower, xmax = .data$Upper), color = style$text, height = 0.14, linewidth = 1.1) +
+    ggplot2::geom_point(ggplot2::aes(x = .data$Estimate), color = style$colors[1], shape = 18, size = 7) +
+    ggplot2::scale_y_continuous(limits = c(0.5, 1.5), breaks = NULL) +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = 0.22)) +
+    ggplot2::labs(
+      title = sprintf("Difference in %s against the margin", result$extras$outcome),
+      subtitle = sprintf("The band is the equivalence margin. The bar is the %s%% interval for %s.",
+                         conf_percent(result$conf_level), e$Contrast),
+      x = sprintf("Difference in %s", result$extras$outcome), y = NULL)
+}
+
+# Agreement lives on the diagonal, so the diagonal cells are outlined. The
+# second rater runs across and the first runs down, with the first category at
+# the top, which is how a printed agreement table is laid out.
+plot_agreement <- function(result, style) {
+  d <- result$plot_data
+  names(d)[1:3] <- c("First", "Second", "Count")
+  d$First <- factor(d$First, levels = rev(result$extras$categories))
+  d$Second <- factor(d$Second, levels = result$extras$categories)
+  agree <- d[as.character(d$First) == as.character(d$Second), , drop = FALSE]
+  ggplot2::ggplot(d, ggplot2::aes(x = .data$Second, y = .data$First, fill = .data$Count)) +
+    ggplot2::geom_tile(color = style$background, linewidth = 2) +
+    ggplot2::geom_tile(data = agree, fill = NA, color = style$text, linewidth = 1.1, width = 0.92, height = 0.92) +
+    count_labels(style) +
+    ggplot2::scale_fill_gradient(low = style$surface, high = style$colors[1]) +
+    ggplot2::scale_x_discrete(position = "top") +
+    ggplot2::labs(title = "Where the two raters placed each case",
+                  subtitle = "Outlined cells are the cases both raters put in the same category.",
+                  x = result$extras$rater_2, y = result$extras$rater_1, fill = "Cases")
+}
+
+# A forest plot in the conventional layout: one row per study in the order
+# entered, marker area following the study's weight, and the pooled estimate
+# last as a diamond. The lighter bar under the diamond is the prediction
+# interval, which is the range a new study would be expected to fall in.
+plot_meta <- function(result, style) {
+  studies <- result$plot_data
+  pooled <- result$estimates[1, ]
+  rows <- c(studies$Study, "Pooled effect")
+  studies$Row <- factor(studies$Study, levels = rev(rows))
+  summary_row <- data.frame(Row = factor("Pooled effect", levels = rev(rows)), Estimate = pooled$Estimate,
+                            Lower = pooled$Lower, Upper = pooled$Upper,
+                            Prediction_lower = pooled$Prediction_lower, Prediction_upper = pooled$Prediction_upper)
+  ggplot2::ggplot(studies, ggplot2::aes(y = .data$Row)) +
+    ggplot2::geom_vline(xintercept = 0, color = style$muted, linetype = "22") +
+    ggplot2::geom_errorbarh(ggplot2::aes(xmin = .data$Lower, xmax = .data$Upper), color = style$muted, height = 0, linewidth = 0.7) +
+    ggplot2::geom_point(ggplot2::aes(x = .data$Estimate, size = .data$Weight), color = style$colors[2], shape = 15) +
+    ggplot2::geom_errorbarh(data = summary_row, ggplot2::aes(xmin = .data$Prediction_lower, xmax = .data$Prediction_upper),
+                            color = style$colors[1], alpha = 0.45, height = 0, linewidth = 2.6) +
+    ggplot2::geom_errorbarh(data = summary_row, ggplot2::aes(xmin = .data$Lower, xmax = .data$Upper),
+                            color = style$text, height = 0.3, linewidth = 1) +
+    ggplot2::geom_point(data = summary_row, ggplot2::aes(x = .data$Estimate), color = style$colors[1], shape = 18, size = 7) +
+    ggplot2::scale_y_discrete(drop = FALSE) +
+    ggplot2::scale_size_area(max_size = 6, guide = "none") +
+    ggplot2::labs(title = sprintf("%d studies and their pooled effect", result$extras$k),
+                  subtitle = sprintf("Bars are %s%% intervals. The pale bar is the range for a new study.",
+                                     conf_percent(result$conf_level)),
+                  x = result$extras$effect, y = NULL)
 }

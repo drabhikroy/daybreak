@@ -6,7 +6,7 @@
 # test helper all read the same value without any of them sourcing the others,
 # and so a release only ever changes one line.
 
-DAYBREAK_VERSION <- "0.10.1"
+DAYBREAK_VERSION <- "1.0.0"
 
 # Shown beside the version in the sidebar footer and the session panel.
-DAYBREAK_RELEASE_DATE <- "2026-08-02"
+DAYBREAK_RELEASE_DATE <- "2026-11-16"

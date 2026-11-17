@@ -4,21 +4,36 @@
 # the finished everyday explanation, but it never receives raw rows and it is
 # not allowed to add, remove, or change numeric values.
 
+# The catalog is ordered from the smallest download to the most capable
+# writer, and every entry says what the model is poor at as well as what it is
+# good at. The job here is narrow: reword five short sections without touching
+# a single number. The notes are written about that job and not about the
+# models in general. min_ram is the memory, in gigabytes, that leaves room for
+# the rest of the computer while the model is loaded.
 LOCAL_MODEL_CATALOG <- list(
-  "qwen3.5:4b" = list(
-    label = "Qwen 3.5 4B, recommended",
-    size = "3.4 GB",
-    note = "A current small model with a good balance of speed and writing quality on Apple silicon."
-  ),
   "llama3.2:3b" = list(
-    label = "Llama 3.2 3B",
-    size = "2.0 GB",
-    note = "The smallest listed download and a practical choice when storage matters most."
+    label = "Llama 3.2 3B", size = "2.0 GB", min_ram = 8,
+    speed = "Fast. A rewrite takes a few seconds on a recent laptop.",
+    good = "The smallest download here and the quickest to answer. It keeps the five sections and the numbers intact on short explanations.",
+    tradeoff = "Its wording is plain and it can shorten a careful caveat more than you would like."
   ),
   "gemma3:4b" = list(
-    label = "Gemma 3 4B",
-    size = "3.3 GB",
-    note = "A compact alternative for local rewriting and short explanations."
+    label = "Gemma 3 4B", size = "3.3 GB", min_ram = 8,
+    speed = "Fast.",
+    good = "Natural, readable sentences for its size, which suits an explanation meant for a general reader.",
+    tradeoff = "It sometimes adds an aside of its own that was not in the source. Daybreak rejects a rewrite when an aside brings a number with it."
+  ),
+  "qwen3.5:4b" = list(
+    label = "Qwen 3.5 4B", size = "3.4 GB", min_ram = 8,
+    speed = "Fast.",
+    good = "Careful with figures and with instructions, so its rewrites pass the number check more often than the others at this size.",
+    tradeoff = "Its phrasing can read as stiff, closer to the original than a looser model would give."
+  ),
+  "llama3.1:8b" = list(
+    label = "Llama 3.1 8B", size = "4.9 GB", min_ram = 16,
+    speed = "Moderate. Slower to load, and noticeably slower on 8 GB of memory.",
+    good = "The most fluent writer of the four. Longer explanations come back reading as if a person had written them.",
+    tradeoff = "The largest download, and more than this job needs on most results."
   )
 )
 
@@ -45,16 +60,30 @@ valid_local_model_name <- function(model) {
     grepl("^[A-Za-z0-9][A-Za-z0-9._/-]*(:[A-Za-z0-9._-]+)?$", model)
 }
 
-local_model_choices <- function(installed = character(0)) {
+# Models already on the computer that the catalog does not list. Someone who
+# pulled a model from a terminal expects to find it here, so these are offered
+# alongside the catalog as soon as Ollama reports them.
+other_installed_models <- function(installed = character(0)) {
   installed <- installed[vapply(installed, valid_local_model_name, logical(1))]
-  known <- stats::setNames(
-    names(LOCAL_MODEL_CATALOG),
-    vapply(LOCAL_MODEL_CATALOG, function(x) paste0(x$label, " (", x$size, ")"), character(1))
-  )
-  if (!length(installed)) return(known)
-  extra <- setdiff(installed, names(LOCAL_MODEL_CATALOG))
-  installed_choices <- stats::setNames(installed, paste0(installed, " (installed)"))
-  unique(c(installed_choices, known, stats::setNames(extra, paste0(extra, " (installed)"))))
+  setdiff(installed, c(names(LOCAL_MODEL_CATALOG), paste0(names(LOCAL_MODEL_CATALOG), ":latest")))
+}
+
+# Whether Ollama holds a catalog model. Ollama reports llama3.2 as
+# llama3.2:latest, so a name is compared with and without that tag.
+model_installed <- function(model, installed = character(0)) {
+  model %in% installed || paste0(model, ":latest") %in% installed
+}
+
+# The model a rewrite will use. A saved choice wins while it is still
+# installed. Otherwise the first installed catalog model is used, then any
+# other installed model, and with nothing installed there is no answer.
+active_local_model <- function(preferred = "", installed = character(0)) {
+  installed <- installed[vapply(installed, valid_local_model_name, logical(1))]
+  if (nzchar(preferred) && model_installed(preferred, installed)) return(preferred)
+  held <- names(LOCAL_MODEL_CATALOG)[vapply(names(LOCAL_MODEL_CATALOG), model_installed, logical(1), installed = installed)]
+  if (length(held)) return(held[1])
+  if (length(installed)) return(installed[1])
+  ""
 }
 
 ollama_error_detail <- function(payload) {
@@ -195,6 +224,16 @@ find_ollama_cli <- function() {
   if (length(candidates)) candidates[1] else ""
 }
 
+# The command line redraws a progress bar many times a second using terminal
+# control codes. Shown raw they are noise, so the codes are stripped and only
+# lines that still say something are kept.
+pull_progress_lines <- function(lines) {
+  lines <- gsub("\033\\[[0-9;?]*[A-Za-z]", "", lines)
+  lines <- gsub("[\u2580-\u259F\r]", "", lines)
+  lines <- trimws(gsub("\\s+", " ", lines))
+  lines[nzchar(lines)]
+}
+
 ollama_pull_spec <- function(model, cli = find_ollama_cli()) {
   if (!valid_local_model_name(model)) stop("Select a valid local model.", call. = FALSE)
   if (!length(cli) || !nzchar(cli[1])) stop("Daybreak could not find the Ollama command.", call. = FALSE)
@@ -216,7 +255,7 @@ LOCAL_MODEL_SECTIONS <- c(
 )
 
 # The source is handed over with headings rather than as one block of text.
-# Labelling it is what lets the instruction "keep these five headings" be
+# Labeling it is what lets the instruction "keep these five headings" be
 # checked afterwards instead of merely requested.
 local_model_source <- function(explanation) {
   paste(
@@ -309,6 +348,21 @@ model_sections_match <- function(output) {
   identical(found, LOCAL_MODEL_SECTIONS)
 }
 
+# A model that hands its instructions back has not rewritten anything, and the
+# two checks above would both pass it, because the instructions contain the
+# five headings and the source contains the right numbers. Three signs give an
+# echo away: a heading that appears more than once, a heading that belongs to
+# the instructions and not to the answer, and a reply far longer than the text
+# it was asked to simplify.
+PROMPT_ONLY_HEADINGS <- c("STRUCTURE", "FACTS", "PICTURES", "WORDING", "OUTPUT", "SOURCE TEXT", "WHAT THE DATA IS ABOUT")
+
+model_echoes_prompt <- function(source, output) {
+  lines <- trimws(strsplit(output, "\n", fixed = TRUE)[[1]])
+  cleaned <- toupper(gsub("[^A-Za-z ]", "", lines))
+  repeated <- any(table(cleaned[cleaned %in% LOCAL_MODEL_SECTIONS]) > 1L)
+  repeated || any(PROMPT_ONLY_HEADINGS %in% cleaned) || nchar(output) > 2 * nchar(source) + 400
+}
+
 # Everything the app requires of a rewrite, in one place, so the caller does not
 # have to remember the order of the checks or the wording of each refusal.
 check_local_rewrite <- function(explanation, output) {
@@ -318,6 +372,12 @@ check_local_rewrite <- function(explanation, output) {
   if (!model_sections_match(output)) {
     return(list(ok = FALSE, message = paste(
       "Daybreak rejected the rewrite because the model did not return the five sections it was asked for.",
+      "The checked everyday explanation above is unchanged."
+    )))
+  }
+  if (model_echoes_prompt(local_model_source(explanation), output)) {
+    return(list(ok = FALSE, message = paste(
+      "Daybreak rejected the rewrite because the model returned its instructions instead of a rewrite.",
       "The checked everyday explanation above is unchanged."
     )))
   }

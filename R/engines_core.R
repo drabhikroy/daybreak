@@ -3,7 +3,7 @@
 # One entry point for every method. The catalog holds the contract, the engine
 # holds the statistics, and this function is the only place that knows how to
 # get from one to the other. Keeping the dispatch here means a new method needs
-# a catalog entry and an analyse_ function and nothing else.
+# a catalog entry and an analyze_ function and nothing else.
 run_analysis <- function(method_id, data, roles, options = list()) {
   spec <- ANALYSES[[method_id]]
   if (is.null(spec)) stop("The selected analysis is not in the catalog.")
@@ -26,7 +26,7 @@ run_analysis <- function(method_id, data, roles, options = list()) {
   if (length(repeated)) {
     stop(sprintf("A column cannot fill more than one role in the same analysis. Choose a different role for: %s.", paste(repeated, collapse = ", ")))
   }
-  engine_name <- paste0("analyse_", spec$engine)
+  engine_name <- paste0("analyze_", spec$engine)
   if (!exists(engine_name, mode = "function")) stop(sprintf("No engine is registered for %s.", spec$name))
   options$.method_id <- method_id
   result <- get(engine_name, mode = "function")(data, roles, options)
@@ -35,7 +35,9 @@ run_analysis <- function(method_id, data, roles, options = list()) {
   # confidence_level(), which applies the same 0.95 default. Recording it once
   # here means no engine has to remember to pass it along, and the two writing
   # layers can always name the interval they are describing.
-  result$conf_level <- tryCatch(confidence_level(options), error = function(e) 0.95)
+  result$conf_level <- result$extras$interval_level %||%
+    tryCatch(confidence_level(options), error = function(e) 0.95)
+  result$evidence <- second_evidence(result)
   result
 }
 
@@ -44,7 +46,7 @@ run_analysis <- function(method_id, data, roles, options = list()) {
 # Reports the median and the interquartile range beside the mean rather than
 # the mean alone. Evaluation data is frequently skewed, and a reader shown only
 # a mean has no way to notice that.
-analyse_descriptives <- function(data, roles, options) {
+analyze_descriptives <- function(data, roles, options) {
   variables <- roles$variables
   # An optional role arrives as an empty string when nobody has chosen a
   # column, and an empty string is not a column name. Summarizing a file without
@@ -90,7 +92,7 @@ analyse_descriptives <- function(data, roles, options) {
   )
 }
 
-analyse_frequencies <- function(data, roles, options) {
+analyze_frequencies <- function(data, roles, options) {
   variables <- roles$variables
   split_var <- roles$split %||% ""
   require_columns(data, c(variables, split_var))
@@ -121,7 +123,7 @@ analyse_frequencies <- function(data, roles, options) {
 # Missingness is a first-class result here rather than a footnote on another
 # method. Whether values are missing at random is a substantive finding, and a
 # reader who can see the pattern before choosing a test makes a better choice.
-analyse_missingness <- function(data, roles, options) {
+analyze_missingness <- function(data, roles, options) {
   variables <- roles$variables
   require_columns(data, variables)
   need_n(nrow(data), 1)
@@ -148,7 +150,7 @@ analyse_missingness <- function(data, roles, options) {
 }
 
 # Comparing means ---------------------------------------------------------
-analyse_one_sample_t <- function(data, roles, options) {
+analyze_one_sample_t <- function(data, roles, options) {
   mu <- as.numeric(options$mu %||% 0)
   if (length(mu) != 1L || !is.finite(mu)) stop("The reference mean must be one finite number.")
   f <- complete_frame(data, roles$outcome)
@@ -177,7 +179,7 @@ analyse_one_sample_t <- function(data, roles, options) {
 # assumption most datasets do not meet, Welch costs almost nothing when they
 # do, and the pooled test is wrong when they do not. The form still offers the
 # pooled version for a reader replicating published work that used it.
-analyse_independent_t <- function(data, roles, options) {
+analyze_independent_t <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$group))
   need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$group]], 2, 2, "The group column")
   g <- as_group(f$data[[roles$group]])
@@ -204,7 +206,7 @@ analyse_independent_t <- function(data, roles, options) {
                 code = sprintf("t.test(%s ~ %s, data = df, var.equal = %s, conf.level = %s)", bt(roles$outcome), bt(roles$group), equal_var, confidence_level(options)))
 }
 
-analyse_paired_t <- function(data, roles, options) {
+analyze_paired_t <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$before, roles$after))
   need_numeric(f$data, c(roles$before, roles$after)); need_n(f$used, 2, "complete pairs")
   before <- f$data[[roles$before]]; after <- f$data[[roles$after]]
@@ -225,7 +227,7 @@ analyse_paired_t <- function(data, roles, options) {
 # The rank tests report a Hodges-Lehmann shift alongside the p-value. A rank
 # test that returns only a p-value tells the reader that something differs
 # without telling them by how much, which is the part they actually needed.
-analyse_mann_whitney <- function(data, roles, options) {
+analyze_mann_whitney <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$group))
   need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$group]], 2, 2, "The group column")
   g <- as_group(f$data[[roles$group]])
@@ -255,7 +257,7 @@ analyse_mann_whitney <- function(data, roles, options) {
                 code = sprintf("wilcox.test(%s ~ %s, data = df, exact = FALSE, conf.int = TRUE, conf.level = %s)", bt(roles$outcome), bt(roles$group), confidence_level(options)))
 }
 
-analyse_paired_wilcoxon <- function(data, roles, options) {
+analyze_paired_wilcoxon <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$before, roles$after))
   need_numeric(f$data, c(roles$before, roles$after)); need_n(f$used, 2, "complete pairs")
   test <- suppressWarnings(stats::wilcox.test(f$data[[roles$after]], f$data[[roles$before]], paired = TRUE, exact = FALSE))
@@ -278,7 +280,7 @@ analyse_paired_wilcoxon <- function(data, roles, options) {
                 code = sprintf("wilcox.test(df[[%s]], df[[%s]], paired = TRUE, exact = FALSE, conf.int = TRUE, conf.level = %s)", r_str(roles$after), r_str(roles$before), confidence_level(options)))
 }
 
-analyse_one_way_anova <- function(data, roles, options) {
+analyze_one_way_anova <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$group))
   need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$group]], 2, label = column_label(roles$group))
   need_variation(f$data, roles$outcome, "One-way ANOVA")
@@ -309,7 +311,7 @@ analyse_one_way_anova <- function(data, roles, options) {
                          "fit <- aov(outcome ~ group, data = fit_data)", "summary(fit)", "TukeyHSD(fit)"))
 }
 
-analyse_welch_anova <- function(data, roles, options) {
+analyze_welch_anova <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$group))
   need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$group]], 2, label = column_label(roles$group))
   need_variation(f$data, roles$outcome, "Welch ANOVA")
@@ -325,7 +327,7 @@ analyse_welch_anova <- function(data, roles, options) {
                 code = sprintf("oneway.test(%s, data = df, var.equal = FALSE)", formula_string(form)))
 }
 
-analyse_kruskal_wallis <- function(data, roles, options) {
+analyze_kruskal_wallis <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$group))
   need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$group]], 2, label = column_label(roles$group))
   need_variation(f$data, roles$outcome, "Kruskal-Wallis analysis")
@@ -343,36 +345,66 @@ analyse_kruskal_wallis <- function(data, roles, options) {
 # Repeated measures needs exactly one row per person per condition. Silently
 # averaging duplicates would change the design without telling anyone, so a
 # duplicated cell stops the analysis and names the problem instead.
-analyse_repeated_anova <- function(data, roles, options) {
+# The condition and case columns are turned into categories before the fit. A
+# condition recorded as a number, such as an age or a week, would otherwise
+# enter as a straight-line trend with one degree of freedom, which is a
+# different model from the one this method names. The fit runs on fixed
+# internal names for the same reason the one-way model does: a column called
+# "time point" would not survive being pasted into an Error() term.
+analyze_repeated_anova <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$within, roles$id))
   need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$within]], 2, label = column_label(roles$within))
   need_variation(f$data, roles$outcome, "Repeated-measures ANOVA")
   need_repeated_cells(f$data, roles$id, roles$within)
-  form_text <- sprintf("%s ~ %s + Error(%s/%s)", bt(roles$outcome), bt(roles$within), bt(roles$id), bt(roles$within))
-  model <- stats::aov(stats::as.formula(form_text), data = f$data)
-  sums <- summary(model)
-  within_tab <- NULL
-  for (piece in sums) {
-    if (is.list(piece) && length(piece) && is.data.frame(piece[[1]]) && "F value" %in% names(piece[[1]])) within_tab <- piece[[1]]
+  fit_data <- data.frame(outcome = f$data[[roles$outcome]],
+                         condition = droplevels(factor(f$data[[roles$within]])),
+                         case = droplevels(factor(f$data[[roles$id]])))
+  need_levels(fit_data$case, 2, label = column_label(roles$id))
+  model <- stats::aov(outcome ~ condition + Error(case / condition), data = fit_data)
+  stratum <- summary(model)[["Error: case:condition"]]
+  within_tab <- if (is.null(stratum)) NULL else stratum[[1]]
+  rows <- if (is.null(within_tab)) character(0) else trimws(rownames(within_tab))
+  if (!all(c("condition", "Residuals") %in% rows)) {
+    stop("The repeated-measures table could not be formed. Check that each case has one row in every condition.")
   }
-  if (is.null(within_tab)) stop("The repeated-measures table could not be formed. Check that each ID has observations in more than one condition.")
-  tests <- data.frame(Test = "Repeated-measures ANOVA", Statistic = within_tab[["F value"]][1],
-                      df1 = within_tab[["Df"]][1], df2 = within_tab[["Df"]][2], p = within_tab[["Pr(>F)"]][1])
-  condition_count <- length(unique(f$data[[roles$within]]))
-  sphericity_check <- if (condition_count <= 2L) {
+  effect <- within_tab[rows == "condition", ]; error <- within_tab[rows == "Residuals", ]
+  f_value <- effect[["F value"]]
+  conditions <- nlevels(fit_data$condition)
+  # Greenhouse and Geisser (1959). With two conditions there is one difference
+  # score and nothing to correct, so epsilon is one by definition.
+  wide <- tapply(fit_data$outcome, list(fit_data$case, fit_data$condition), mean)
+  epsilon <- greenhouse_geisser(stats::cov(wide))
+  corrected_p <- stats::pf(f_value, effect[["Df"]] * epsilon, error[["Df"]] * epsilon, lower.tail = FALSE)
+  assumed <- data.frame(Test = "Sphericity assumed", Statistic = f_value,
+                        df1 = effect[["Df"]], df2 = error[["Df"]], p = effect[["Pr(>F)"]], Epsilon = 1)
+  corrected <- data.frame(Test = "Greenhouse-Geisser corrected", Statistic = f_value,
+                          df1 = effect[["Df"]] * epsilon, df2 = error[["Df"]] * epsilon, p = corrected_p, Epsilon = epsilon)
+  # The corrected row leads when there is something to correct, because the
+  # first row of this table is the one the two written readings describe.
+  tests <- if (conditions > 2L) rbind(corrected, assumed) else assumed
+  est <- data.frame(Effect = "Partial eta squared",
+                    Estimate = effect[["Sum Sq"]] / (effect[["Sum Sq"]] + error[["Sum Sq"]]))
+  sphericity_check <- if (conditions <= 2L) {
     check_row("Sphericity", "Automatic with two conditions", "No sphericity correction is needed when there are only two repeated conditions.", "ok")
+  } else if (epsilon >= 0.9) {
+    check_row("Sphericity", "Little departure",
+              sprintf("Greenhouse-Geisser epsilon was %s, where 1 means the assumption holds exactly. Both versions of the test are in the Tests table.", fmt_num(epsilon, 3)), "ok")
   } else {
-    check_row("Sphericity", "Not estimated in this compact model", "For three or more conditions, confirm the result with a mixed model or a sphericity-corrected analysis.", "warn")
+    check_row("Sphericity", "Read the corrected p-value",
+              sprintf("Greenhouse-Geisser epsilon was %s, where 1 means the assumption holds exactly. The uncorrected test is too generous here, so the corrected row is the one to report.", fmt_num(epsilon, 3)), "warn")
   }
-  result_record("repeated_anova", f$used, f$omitted, tests = tests, model = model,
+  result_record("repeated_anova", f$used, f$omitted, est, tests, model = model,
                 checks = sphericity_check,
                 plot_kind = "repeated", plot_data = f$data,
                 extras = list(outcome = roles$outcome, within = roles$within, id = roles$id),
-                code = c(sprintf("fit <- aov(%s, data = df)", form_text), "summary(fit)"))
+                code = c(sprintf("fit_data <- data.frame(outcome = df[[%s]], condition = factor(df[[%s]]), case = factor(df[[%s]]))",
+                                 r_str(roles$outcome), r_str(roles$within), r_str(roles$id)),
+                         "fit_data <- fit_data[complete.cases(fit_data), ]",
+                         "fit <- aov(outcome ~ condition + Error(case / condition), data = fit_data)", "summary(fit)"))
 }
 
 # Tables and proportions --------------------------------------------------
-analyse_chi_square <- function(data, roles, options) {
+analyze_chi_square <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$row, roles$column))
   tab <- table(f$data[[roles$row]], f$data[[roles$column]])
   need_levels(f$data[[roles$row]], 2, label = column_label(roles$row)); need_levels(f$data[[roles$column]], 2, label = column_label(roles$column))
@@ -397,7 +429,7 @@ analyse_chi_square <- function(data, roles, options) {
 # Fisher's exact test grows very quickly with table size, so a large table is
 # refused rather than left to run for an unknown length of time. Monte Carlo
 # simulation stays available for the cases where an exact answer is not needed.
-analyse_fisher_exact <- function(data, roles, options) {
+analyze_fisher_exact <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$row, roles$column))
   tab <- table(f$data[[roles$row]], f$data[[roles$column]])
   need_levels(f$data[[roles$row]], 2, label = column_label(roles$row)); need_levels(f$data[[roles$column]], 2, label = column_label(roles$column))
@@ -425,7 +457,7 @@ analyse_fisher_exact <- function(data, roles, options) {
                                  if (simulated) sprintf(", B = %d", simulations) else "")))
 }
 
-analyse_mcnemar <- function(data, roles, options) {
+analyze_mcnemar <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$before, roles$after))
   need_levels(f$data[[roles$before]], 2, 2, label = column_label(roles$before)); need_levels(f$data[[roles$after]], 2, 2, label = column_label(roles$after))
   # A paired binary test compares the same two response options measured twice.
@@ -457,7 +489,7 @@ analyse_mcnemar <- function(data, roles, options) {
 # Proportion intervals come from prop.test, which applies the Wilson score
 # method. The Wald interval taught in most first courses behaves badly near
 # zero and one, where it can produce a bound below zero or above one.
-analyse_one_proportion <- function(data, roles, options) {
+analyze_one_proportion <- function(data, roles, options) {
   f <- complete_frame(data, roles$outcome)
   binary <- binary01(f$data[[roles$outcome]])
   reference <- as.numeric(options$reference_proportion %||% 0.5)
@@ -484,7 +516,7 @@ analyse_one_proportion <- function(data, roles, options) {
                                  reference, isTRUE(options$continuity_correction), confidence_level(options))))
 }
 
-analyse_two_proportions <- function(data, roles, options) {
+analyze_two_proportions <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$group))
   binary <- binary01(f$data[[roles$outcome]])
   group <- as_group(f$data[[roles$group]]); need_levels(group, 2, 2, "The group column")
@@ -493,7 +525,9 @@ analyse_two_proportions <- function(data, roles, options) {
   test <- suppressWarnings(stats::prop.test(successes, totals,
                                              correct = isTRUE(options$continuity_correction),
                                              conf.level = confidence_level(options)))
-  proportions <- successes / totals
+  # Dividing by a table gives a table, and a table placed in a data frame
+  # spreads into several columns. Plain numbers keep one value per group.
+  proportions <- stats::setNames(as.numeric(successes) / as.numeric(totals), levels(group))
   estimates <- data.frame(Contrast = paste(levels(group), collapse = " minus "),
                           Estimate = unname(proportions[1] - proportions[2]),
                           Lower = unname(test$conf.int[1]), Upper = unname(test$conf.int[2]),
@@ -517,7 +551,7 @@ analyse_two_proportions <- function(data, roles, options) {
 # Type III sums of squares would need a contrast setting that most readers of
 # this app would not know to check, so the engine reports the sequential Type I
 # decomposition that aov produces and names it plainly in the output.
-analyse_factorial_anova <- function(data, roles, options) {
+analyze_factorial_anova <- function(data, roles, options) {
   covariates <- roles$covariates %||% character(0)
   columns <- c(roles$outcome, roles$factors, covariates)
   f <- complete_frame(data, columns); need_numeric(f$data, c(roles$outcome, covariates))
@@ -548,7 +582,7 @@ analyse_factorial_anova <- function(data, roles, options) {
                 code = c(sprintf("fit <- lm(%s, data = df)", formula_string(form)), "anova(fit)", "summary(fit)"))
 }
 
-analyse_friedman <- function(data, roles, options) {
+analyze_friedman <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$within, roles$id))
   need_numeric(f$data, roles$outcome); need_levels(f$data[[roles$within]], 2, label = column_label(roles$within))
   need_variation(f$data, roles$outcome, "Friedman analysis")
@@ -565,7 +599,7 @@ analyse_friedman <- function(data, roles, options) {
 }
 
 # Association and prediction ----------------------------------------------
-analyse_correlation <- function(data, roles, options) {
+analyze_correlation <- function(data, roles, options) {
   variables <- roles$variables
   f <- complete_frame(data, variables); need_numeric(f$data, variables); need_n(f$used, 3)
   method <- options$cor_method %||% "pearson"
@@ -578,8 +612,14 @@ analyse_correlation <- function(data, roles, options) {
     test <- suppressWarnings(stats::cor.test(f$data[[pair[1]]], f$data[[pair[2]]], method = method,
                                              exact = FALSE, conf.level = confidence_level(options)))
     ci <- test$conf.int %||% c(NA_real_, NA_real_)
-    data.frame(Variable_1 = pair[1], Variable_2 = pair[2], Correlation = unname(test$estimate),
-               Lower = unname(ci[1]), Upper = unname(ci[2]), Statistic = unname(test$statistic), p = test$p.value)
+    row <- data.frame(Variable_1 = pair[1], Variable_2 = pair[2], Correlation = unname(test$estimate),
+                      Lower = unname(ci[1]), Upper = unname(ci[2]), Statistic = unname(test$statistic), p = test$p.value)
+    # The default prior is defined for the Pearson coefficient only, so the
+    # rank correlations go without a Bayes factor instead of borrowing one.
+    if (method == "pearson" && bayes_factor_available()) {
+      row$BF10 <- bf_correlation(f$data[[pair[1]]], f$data[[pair[2]]])
+    }
+    row
   })
   estimates <- do.call(rbind, rows)
   result_record("correlation", f$used, f$omitted, estimates = estimates,
@@ -593,7 +633,7 @@ analyse_correlation <- function(data, roles, options) {
 # computed that way here rather than through a matrix inversion. Doing it in
 # the open means the degrees of freedom adjustment is visible and the exported
 # script reproduces the same two regressions.
-analyse_partial_correlation <- function(data, roles, options) {
+analyze_partial_correlation <- function(data, roles, options) {
   controls <- roles$controls
   columns <- c(roles$x, roles$y, controls)
   f <- complete_frame(data, columns); need_numeric(f$data, columns); need_n(f$used, length(controls) + 4)
@@ -635,7 +675,7 @@ analyse_partial_correlation <- function(data, roles, options) {
                          sprintf("r <- cor(rx, ry) # df = %d", df)))
 }
 
-analyse_linear_regression <- function(data, roles, options) {
+analyze_linear_regression <- function(data, roles, options) {
   columns <- c(roles$outcome, roles$predictors)
   f <- complete_frame(data, columns); need_numeric(f$data, roles$outcome)
   need_variation(f$data, roles$outcome, "Linear regression")
@@ -664,7 +704,7 @@ analyse_linear_regression <- function(data, roles, options) {
 # the lower-order coefficients describe the outcome where the other predictor
 # equals zero, which is often outside the observed range and occasionally
 # impossible, and readers reliably misread them as main effects.
-analyse_moderation <- function(data, roles, options) {
+analyze_moderation <- function(data, roles, options) {
   controls <- roles$controls %||% character(0)
   columns <- c(roles$outcome, roles$focal, roles$moderator, controls)
   f <- complete_frame(data, columns); need_numeric(f$data, roles$outcome)
@@ -730,7 +770,7 @@ analyse_moderation <- function(data, roles, options) {
 # Coefficients are exponentiated before they are shown. A reader who is given
 # a log odds has to do a transformation in their head before the number means
 # anything, and the number they would arrive at is the one reported here.
-analyse_logistic_regression <- function(data, roles, options) {
+analyze_logistic_regression <- function(data, roles, options) {
   columns <- c(roles$outcome, roles$predictors)
   f <- complete_frame(data, columns); need_n(f$used, length(roles$predictors) + 5)
   binary <- binary01(f$data[[roles$outcome]])
@@ -766,7 +806,7 @@ analyse_logistic_regression <- function(data, roles, options) {
                          sprintf("exp(cbind(odds_ratio = coef(fit), confint.default(fit, level = %s)))", confidence_level(options))))
 }
 
-analyse_poisson_regression <- function(data, roles, options) {
+analyze_poisson_regression <- function(data, roles, options) {
   columns <- c(roles$outcome, roles$predictors, roles$exposure_time %||% "")
   columns <- columns[nzchar(columns)]
   f <- complete_frame(data, columns); need_numeric(f$data, c(roles$outcome, if (nzchar(roles$exposure_time %||% "")) roles$exposure_time else character(0)))

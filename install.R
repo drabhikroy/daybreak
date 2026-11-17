@@ -25,13 +25,14 @@ core_minimum <- c(
   readr = "2.0.0",
   scales = "1.2.0"
 )
-advanced <- c("lavaan", "lme4", "lmerTest", "nnet", "MASS", "psych", "survival", "nlme")
+advanced <- c("lavaan", "lme4", "lmerTest", "nnet", "MASS", "psych", "survival", "nlme", "metafor")
+evidence <- c("BayesFactor")
 machine_learning <- c("rpart", "ranger", "class", "glmnet", "e1071", "dbscan")
 missing_data <- c("mice", "missForest", "VIM")
 imports <- c("readxl", "readODS", "haven", "jsonlite", "arrow")
 exports <- c("rmarkdown", "knitr", "zip", "svglite", "ragg", "magick", "tikzDevice")
 testing <- c("testthat")
-local_models <- c("httr", "jsonlite", "processx")
+local_models <- c("httr", "jsonlite", "processx", "curl", "later", "digest")
 
 packages_to_install <- function(packages, minimum = NULL) {
   packages[vapply(packages, function(package) {
@@ -57,16 +58,15 @@ if (is.null(repos) || !length(repos) || is.na(cran_repo) || identical(cran_repo,
 }
 
 install_needed(core, core_minimum)
-all_optional <- unique(c(advanced, machine_learning, missing_data, imports, exports, local_models, testing))
+all_optional <- unique(c(advanced, evidence, machine_learning, missing_data, imports, exports, local_models, testing))
 install_needed(all_optional)
 
 # Only the six core packages can stop the app. Several optional packages need
-# system software that a given Mac may not have: magick needs ImageMagick,
-# tikzDevice needs a TeX installation, and arrow ships a large compiled
-# library. Treating any one of those as fatal meant a missing PSD export
-# blocked the whole application from opening. Each method already names its own
-# missing package before it tries to fit, so an absent optional package costs
-# the reader one method rather than the app.
+# system software that a given computer may not have: magick needs
+# ImageMagick, tikzDevice needs a TeX installation, and arrow ships a large
+# compiled library. None of those should keep the application from opening.
+# Each method names its own missing package before it tries to fit, so an
+# absent optional package costs the reader one method and not the app.
 core_missing <- core[!vapply(core, requireNamespace, logical(1), quietly = TRUE)]
 if (length(core_missing)) {
   stop(

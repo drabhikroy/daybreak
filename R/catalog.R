@@ -50,7 +50,8 @@ ANALYSIS_FAMILIES <- c(
   "Study several outcomes" = "Study several outcomes",
   "Study scales and latent variables" = "Study scales and latent variables",
   "Study clustered or repeated data" = "Study clustered or repeated data",
-  "Study events over time" = "Study events over time"
+  "Study events over time" = "Study events over time",
+  "Combine studies" = "Combine studies"
 )
 
 # The two selector groupings. Everything above the machine learning families is
@@ -124,6 +125,12 @@ ANALYSES <- list(
     "A rank-based comparison for two paired measurements.",
     list(role("before", "First measurement", "numeric_one", "Choose the earlier or first measure."),
          role("after", "Second measurement", "numeric_one", "Choose the later or second measure."))
+  ),
+  equivalence = method(
+    "equivalence", "Equivalence test", "Compare groups",
+    "Are two groups close enough to treat as the same?",
+    "Two one-sided Welch tests against a margin you set. An unclear difference test does not show sameness, and this one can.",
+    list(r_num_one(), r_cat_one()), level = "Intermediate"
   ),
   one_way_anova = method(
     "one_way_anova", "One-way ANOVA", "Compare groups",
@@ -377,6 +384,14 @@ ANALYSES <- list(
     "Reports coefficient alpha, item-rest correlations, and alpha if each item is removed.",
     list(r_num_many())
   ),
+  agreement = method(
+    "agreement", "Rater agreement", "Study scales and latent variables",
+    "Do two raters agree beyond chance?",
+    "Cohen's kappa for two raters who classified the same cases, with optional weights for ordered categories.",
+    list(role("rater_1", "First rater", "categorical_one", "Choose the column holding the first rater's categories."),
+         role("rater_2", "Second rater", "categorical_one", "Choose the column holding the second rater's categories.")),
+    level = "Intermediate"
+  ),
   cfa = method(
     "cfa", "Confirmatory factor analysis", "Study scales and latent variables",
     "Does a proposed measurement model fit the observed data?",
@@ -439,7 +454,84 @@ ANALYSES <- list(
     "Fits a selected ARIMA order, reports coefficients and residual checks, and plots fitted values.",
     list(r_num_one(), role("time", "Time order", "numeric_or_date_one", "Choose the date, period, or ordered time column.")),
     level = "Advanced"
+  ),
+  # One row per study. The method reads effects that are already on the scale
+  # they should be pooled on, so it works for mean differences, correlations
+  # after Fisher's z, and ratios after a log.
+  meta_analysis = method(
+    "meta_analysis", "Random-effects meta-analysis", "Combine studies",
+    "What do several studies say together?",
+    "Pools one effect per study with a random-effects model and reports how much the studies disagree and what a new study might find.",
+    list(role("effect", "Effect size", "numeric_one", "Choose the column holding one effect per study."),
+         role("se", "Standard error", "numeric_one", "Choose the column holding each effect's standard error."),
+         role("study", "Study label", "label_optional", "Optional. Choose the column that names each study.", FALSE)),
+    requires = "metafor", level = "Advanced"
   )
+)
+
+# The guide ------------------------------------------------------------------
+#
+# A second way into the catalog for someone who knows their situation and not
+# the name of a method. Each goal lists situations in plain words, and each
+# situation names the methods that fit it, simplest first. It is data for the
+# same reason the catalog is: the directory draws it, the tests check that
+# every method can be reached through it, and neither needs to know the other.
+guide_row <- function(when, methods) list(when = when, methods = methods)
+
+METHOD_GUIDE <- list(
+  list(id = "describe", goal = "Describe what is in the file", rows = list(
+    guide_row("Summarize numeric columns: averages, spread, and range", "descriptives"),
+    guide_row("Count how often each category appears", "frequencies"),
+    guide_row("See where values are missing and in what patterns", "missingness")
+  )),
+  list(id = "compare", goal = "Compare groups or conditions", rows = list(
+    guide_row("One group against a known or target value", c("one_sample_t", "one_proportion")),
+    guide_row("Two separate groups on a numeric outcome", c("independent_t", "mann_whitney")),
+    guide_row("The same cases measured twice", c("paired_t", "paired_wilcoxon", "mcnemar")),
+    guide_row("Three or more separate groups", c("one_way_anova", "welch_anova", "kruskal_wallis")),
+    guide_row("The same cases measured three or more times", c("repeated_anova", "friedman")),
+    guide_row("Two or more grouping factors at once, with or without a covariate", "factorial_anova"),
+    guide_row("Groups compared on a yes or no outcome, or two category columns", c("two_proportions", "chi_square", "fisher_exact")),
+    guide_row("Show that two groups are close enough to count as the same", "equivalence")
+  )),
+  list(id = "relate", goal = "See how things go together", rows = list(
+    guide_row("How strongly two or more numeric columns move together", "correlation"),
+    guide_row("The same, with other columns held constant", "partial_correlation"),
+    guide_row("A numeric outcome explained by one or more predictors", "linear_regression"),
+    guide_row("Whether one predictor matters more at some levels of another", "moderation"),
+    guide_row("Whether an effect travels through a variable in the middle", "mediation")
+  )),
+  list(id = "model", goal = "Model an outcome that is not a plain number", rows = list(
+    guide_row("A yes or no outcome", "logistic_regression"),
+    guide_row("An outcome with three or more categories", c("multinomial_regression", "ordinal_regression")),
+    guide_row("A count of events", c("poisson_regression", "negative_binomial")),
+    guide_row("Several numeric outcomes at once", "manova"),
+    guide_row("Rows that sit inside groups, such as students in schools", c("hlm_linear", "hlm_logistic")),
+    guide_row("Change across repeated visits", "growth_model")
+  )),
+  list(id = "predict", goal = "Predict new cases", rows = list(
+    guide_row("Predict which category a row belongs to",
+              c("classification_tree", "random_forest_classification", "nearest_neighbors", "naive_bayes", "elastic_net_classification")),
+    guide_row("Predict a number", c("regression_tree", "random_forest_regression", "elastic_net_regression"))
+  )),
+  list(id = "structure", goal = "Find structure when there is no outcome", rows = list(
+    guide_row("Groups of similar rows", c("kmeans_clustering", "hierarchical_clustering", "dbscan_clustering", "hdbscan_clustering")),
+    guide_row("A few summary dimensions from many columns", "pca"),
+    guide_row("Hidden traits behind a set of survey items", "factor_analysis")
+  )),
+  list(id = "measure", goal = "Check a scale or a set of ratings", rows = list(
+    guide_row("Whether the items of a scale hang together", "reliability"),
+    guide_row("Whether two raters agree beyond chance", "agreement"),
+    guide_row("Whether a planned measurement structure fits", "cfa"),
+    guide_row("Paths among traits that are measured by several items", "sem")
+  )),
+  list(id = "time", goal = "Study time", rows = list(
+    guide_row("How long until an event happens", c("kaplan_meier", "cox_regression")),
+    guide_row("A series measured at regular times, with or without a forecast", "time_series")
+  )),
+  list(id = "combine", goal = "Combine several studies", rows = list(
+    guide_row("One effect and its standard error from each study", "meta_analysis")
+  ))
 )
 
 # Grouped by the question a reader is trying to answer rather than by

@@ -1,6 +1,6 @@
 testthat::test_that("one-sample t output matches stats", {
   d <- data.frame(score = c(3, 4, 5, 6, 7))
-  got <- analyse_one_sample_t(d, list(outcome = "score"), list(mu = 4, conf_level = 0.95))
+  got <- analyze_one_sample_t(d, list(outcome = "score"), list(mu = 4, conf_level = 0.95))
   expected <- stats::t.test(d$score, mu = 4)
   testthat::expect_equal(got$estimates$Estimate, mean(d$score) - 4)
   testthat::expect_equal(got$estimates$Lower, unname(expected$conf.int[1]) - 4)
@@ -11,14 +11,14 @@ testthat::test_that("one-sample t output matches stats", {
 
 testthat::test_that("independent t output carries the requested contrast", {
   d <- data.frame(score = c(2, 3, 4, 7, 8, 9), group = factor(rep(c("A", "B"), each = 3)))
-  got <- analyse_independent_t(d, list(outcome = "score", group = "group"), list(equal_var = FALSE, conf_level = 0.95))
+  got <- analyze_independent_t(d, list(outcome = "score", group = "group"), list(equal_var = FALSE, conf_level = 0.95))
   testthat::expect_equal(got$estimates$Estimate, mean(d$score[d$group == "A"]) - mean(d$score[d$group == "B"]))
   testthat::expect_lt(got$tests$p, 0.05)
 })
 
 testthat::test_that("linear regression matches lm coefficients", {
   d <- datasets::mtcars
-  got <- analyse_linear_regression(d, list(outcome = "mpg", predictors = c("wt", "hp")), list())
+  got <- analyze_linear_regression(d, list(outcome = "mpg", predictors = c("wt", "hp")), list())
   expected <- stats::lm(mpg ~ wt + hp, data = d)
   testthat::expect_equal(stats::coef(got$model), stats::coef(expected))
   testthat::expect_equal(got$n_used, nrow(d))
@@ -27,21 +27,21 @@ testthat::test_that("linear regression matches lm coefficients", {
 testthat::test_that("chi-square effect size is bounded", {
   d <- data.frame(a = factor(rep(c("yes", "no"), each = 20)),
                   b = factor(c(rep("up", 16), rep("down", 4), rep("up", 5), rep("down", 15))))
-  got <- analyse_chi_square(d, list(row = "a", column = "b"), list())
+  got <- analyze_chi_square(d, list(row = "a", column = "b"), list())
   testthat::expect_gte(got$estimates$Estimate, 0)
   testthat::expect_lte(got$estimates$Estimate, 1)
   testthat::expect_lt(got$tests$p, 0.01)
 })
 
 testthat::test_that("PCA explained variation totals one", {
-  got <- analyse_pca(datasets::iris, list(variables = names(datasets::iris)[1:4]), list(components = 3))
+  got <- analyze_pca(datasets::iris, list(variables = names(datasets::iris)[1:4]), list(components = 3))
   testthat::expect_equal(sum(got$estimates$Explained), 1, tolerance = 1e-10)
   testthat::expect_equal(tail(got$estimates$Cumulative, 1), 1, tolerance = 1e-10)
 })
 
 testthat::test_that("manual alpha matches its defining formula", {
   items <- data.frame(a = 1:8, b = c(1, 2, 3, 5, 5, 6, 7, 8), c = c(2, 2, 4, 4, 6, 6, 8, 8))
-  got <- analyse_reliability(items, list(variables = names(items)), list())
+  got <- analyze_reliability(items, list(variables = names(items)), list())
   k <- ncol(items)
   expected <- k / (k - 1) * (1 - sum(vapply(items, var, numeric(1))) / var(rowSums(items)))
   testthat::expect_equal(got$extras$alpha, expected)
@@ -50,7 +50,7 @@ testthat::test_that("manual alpha matches its defining formula", {
 testthat::test_that("partial correlation uses the control-adjusted degrees of freedom", {
   set.seed(44)
   d <- data.frame(x = stats::rnorm(80), y = stats::rnorm(80), z = stats::rnorm(80))
-  got <- analyse_partial_correlation(
+  got <- analyze_partial_correlation(
     d, list(x = "x", y = "y", controls = "z"),
     list(cor_method = "pearson", conf_level = 0.90)
   )
@@ -74,7 +74,7 @@ testthat::test_that("rank partial correlation ranks before removing controls", {
     stats::residuals(stats::lm(x ~ z, data = ranked)),
     stats::residuals(stats::lm(y ~ z, data = ranked))
   )
-  got <- analyse_partial_correlation(
+  got <- analyze_partial_correlation(
     d, list(x = "x", y = "y", controls = "z"),
     list(cor_method = "spearman")
   )
@@ -86,12 +86,12 @@ testthat::test_that("repeated analyses reject missing or duplicate cells", {
   d <- expand.grid(id = factor(1:8), visit = factor(1:3))
   d$score <- seq_len(nrow(d))
   testthat::expect_error(
-    analyse_repeated_anova(d[-1, ], list(outcome = "score", within = "visit", id = "id"), list()),
+    analyze_repeated_anova(d[-1, ], list(outcome = "score", within = "visit", id = "id"), list()),
     "one row in every repeated condition",
     fixed = TRUE
   )
   testthat::expect_error(
-    analyse_friedman(rbind(d, d[1, ]), list(outcome = "score", within = "visit", id = "id"), list()),
+    analyze_friedman(rbind(d, d[1, ]), list(outcome = "score", within = "visit", id = "id"), list()),
     "one row per case and condition",
     fixed = TRUE
   )
@@ -100,13 +100,13 @@ testthat::test_that("repeated analyses reject missing or duplicate cells", {
 testthat::test_that("exported logistic and proportion code replays", {
   set.seed(45)
   d <- data.frame(outcome = factor(stats::rbinom(100, 1, 0.45)), x = stats::rnorm(100))
-  logistic <- analyse_logistic_regression(d, list(outcome = "outcome", predictors = "x"), list())
+  logistic <- analyze_logistic_regression(d, list(outcome = "outcome", predictors = "x"), list())
   environment <- new.env(parent = globalenv())
   environment$df <- d
   testthat::expect_silent(eval(parse(text = paste(logistic$code, collapse = "\n")), envir = environment))
 
   p_data <- data.frame(answer = factor(c("no", "yes", "yes", NA, "no", "yes")))
-  proportion <- analyse_one_proportion(
+  proportion <- analyze_one_proportion(
     p_data, list(outcome = "answer"),
     list(reference_proportion = 0.5, continuity_correction = FALSE)
   )
@@ -125,7 +125,7 @@ testthat::test_that("randomized helpers leave the caller's random state alone", 
   set.seed(47)
   expected <- stats::runif(4)
   set.seed(47)
-  invisible(analyse_kmeans_clustering(
+  invisible(analyze_kmeans_clustering(
     datasets::iris[1:4], list(variables = names(datasets::iris)[1:4]),
     list(clusters = 3, random_seed = 77L)
   ))

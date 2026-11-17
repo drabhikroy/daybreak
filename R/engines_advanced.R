@@ -1,6 +1,6 @@
 # Advanced regression, latent-variable, clustered, and time-to-event models -
 
-analyse_negative_binomial <- function(data, roles, options) {
+analyze_negative_binomial <- function(data, roles, options) {
   columns <- c(roles$outcome, roles$predictors, roles$exposure_time %||% "")
   columns <- columns[nzchar(columns)]
   f <- complete_frame(data, columns)
@@ -32,7 +32,7 @@ analyse_negative_binomial <- function(data, roles, options) {
 # Each of these returns exponentiated coefficients, because a reader who is
 # handed a log odds or a log hazard has to transform it before it means
 # anything, and the transformed number is the one they were after.
-analyse_multinomial_regression <- function(data, roles, options) {
+analyze_multinomial_regression <- function(data, roles, options) {
   columns <- c(roles$outcome, roles$predictors)
   f <- complete_frame(data, columns); need_levels(f$data[[roles$outcome]], 3, label = column_label(roles$outcome)); need_n(f$used, 20)
   f$data[[roles$outcome]] <- as_group(f$data[[roles$outcome]])
@@ -69,7 +69,7 @@ analyse_multinomial_regression <- function(data, roles, options) {
 # the assumption on a small sample tends to reject for reasons unrelated to the
 # question, so the check table names the assumption and leaves the judgment
 # with the analyst.
-analyse_ordinal_regression <- function(data, roles, options) {
+analyze_ordinal_regression <- function(data, roles, options) {
   columns <- c(roles$outcome, roles$predictors)
   f <- complete_frame(data, columns); need_levels(f$data[[roles$outcome]], 3, label = column_label(roles$outcome)); need_n(f$used, 20)
   outcome <- f$data[[roles$outcome]]
@@ -109,7 +109,7 @@ analyse_ordinal_regression <- function(data, roles, options) {
                          sprintf("fit <- polr(%s, data = df, Hess = TRUE)", formula_string(form)), "summary(fit)"))
 }
 
-analyse_manova <- function(data, roles, options) {
+analyze_manova <- function(data, roles, options) {
   columns <- c(roles$outcomes, roles$predictors)
   if (length(roles$outcomes) < 2L) stop("MANOVA needs at least two numeric outcomes.")
   f <- complete_frame(data, columns); need_numeric(f$data, roles$outcomes)
@@ -149,7 +149,7 @@ analyse_manova <- function(data, roles, options) {
                 code = c(sprintf("fit <- manova(%s, data = df)", formula_string(form)), "summary(fit, test = 'Pillai')", "summary.aov(fit)"))
 }
 
-analyse_pca <- function(data, roles, options) {
+analyze_pca <- function(data, roles, options) {
   variables <- roles$variables
   if (length(variables) < 2L) stop("Principal components analysis needs at least two numeric columns.")
   f <- complete_frame(data, variables); need_numeric(f$data, variables); need_n(f$used, 3)
@@ -187,7 +187,7 @@ cluster_projection <- function(frame, cluster) {
 # Every clustering method here standardizes first. Without it the column with
 # the widest numeric range decides the clusters, so a variable recorded in
 # dollars quietly outranks one recorded in years.
-analyse_kmeans_clustering <- function(data, roles, options) {
+analyze_kmeans_clustering <- function(data, roles, options) {
   variables <- roles$variables
   if (length(variables) < 2L) stop("K-means clustering needs at least two numeric columns.")
   f <- complete_frame(data, variables); need_numeric(f$data, variables)
@@ -214,7 +214,7 @@ analyse_kmeans_clustering <- function(data, roles, options) {
                          sprintf("fit <- kmeans(scale(model_data), centers = %d, nstart = 30)", centers), "fit"))
 }
 
-analyse_hierarchical_clustering <- function(data, roles, options) {
+analyze_hierarchical_clustering <- function(data, roles, options) {
   variables <- roles$variables
   if (length(variables) < 2L) stop("Hierarchical clustering needs at least two numeric columns.")
   f <- complete_frame(data, variables); need_numeric(f$data, variables)
@@ -246,7 +246,7 @@ max_identified_factors <- function(p) {
   if (length(ok)) max(ok) else 0L
 }
 
-analyse_factor_analysis <- function(data, roles, options) {
+analyze_factor_analysis <- function(data, roles, options) {
   variables <- roles$variables
   if (length(variables) < 3L) stop("Exploratory factor analysis needs at least three numeric columns.")
   f <- complete_frame(data, variables); need_numeric(f$data, variables); need_n(f$used, max(20, length(variables) + 2))
@@ -296,7 +296,7 @@ analyse_factor_analysis <- function(data, roles, options) {
                          sprintf("fit <- fa(model_data, nfactors = %d, rotate = '%s', fm = '%s')", factors, rotation, options$factor_method %||% "minres"), "print(fit$loadings)"))
 }
 
-analyse_reliability <- function(data, roles, options) {
+analyze_reliability <- function(data, roles, options) {
   variables <- roles$variables
   if (length(variables) < 2L) stop("Reliability analysis needs at least two item columns.")
   f <- complete_frame(data, variables); need_numeric(f$data, variables); need_n(f$used, 3)
@@ -378,8 +378,8 @@ lavaan_result <- function(kind, data, syntax, options, fit_call = c("cfa", "sem"
                 warnings = notes)
 }
 
-analyse_cfa <- function(data, roles, options) lavaan_result("cfa", data, roles$model_syntax, options, "cfa")
-analyse_sem <- function(data, roles, options) lavaan_result("sem", data, roles$model_syntax, options, "sem")
+analyze_cfa <- function(data, roles, options) lavaan_result("cfa", data, roles$model_syntax, options, "cfa")
+analyze_sem <- function(data, roles, options) lavaan_result("sem", data, roles$model_syntax, options, "sem")
 
 # Latent variable models --------------------------------------------------
 #
@@ -387,7 +387,7 @@ analyse_sem <- function(data, roles, options) lavaan_result("sem", data, roles$m
 # product of two coefficients is not normally distributed, and the normal-based
 # test is known to be conservative in exactly the small samples where the
 # question usually comes up.
-analyse_mediation <- function(data, roles, options) {
+analyze_mediation <- function(data, roles, options) {
   controls <- roles$controls %||% character(0)
   columns <- c(roles$outcome, roles$exposure, roles$mediator, controls)
   unsafe <- columns[make.names(columns) != columns]
@@ -425,7 +425,7 @@ analyse_mediation <- function(data, roles, options) {
 # well placed to judge how far a gradient of the reported size can be trusted,
 # and a result they cannot evaluate is worse than a message telling them the
 # model needs simplifying.
-analyse_hlm_linear <- function(data, roles, options) {
+analyze_hlm_linear <- function(data, roles, options) {
   is_growth <- identical(options$.method_id, "growth_model")
   predictors <- if (is_growth) unique(c(roles$time, roles$controls %||% character(0))) else roles$predictors
   random_slope <- if (is_growth && isTRUE(options$growth_random_slope %||% TRUE)) roles$time else roles$random_slope %||% ""
@@ -483,7 +483,7 @@ analyse_hlm_linear <- function(data, roles, options) {
                          sprintf("fit <- lmer(%s, data = df, REML = %s)", formula_string(form), isTRUE(options$reml %||% TRUE)), "summary(fit)"))
 }
 
-analyse_hlm_logistic <- function(data, roles, options) {
+analyze_hlm_logistic <- function(data, roles, options) {
   columns <- c(roles$outcome, roles$predictors, roles$cluster, roles$random_slope %||% "")
   columns <- unique(columns[nzchar(columns)])
   f <- complete_frame(data, columns); binary <- binary01(f$data[[roles$outcome]])
@@ -568,7 +568,7 @@ survival_summary_table <- function(model, level, grouped) {
   out
 }
 
-analyse_kaplan_meier <- function(data, roles, options) {
+analyze_kaplan_meier <- function(data, roles, options) {
   group <- roles$group %||% ""
   columns <- c(roles$time, roles$status, group); columns <- columns[nzchar(columns)]
   f <- complete_frame(data, columns); need_numeric(f$data, roles$time)
@@ -622,7 +622,7 @@ analyse_kaplan_meier <- function(data, roles, options) {
 # Proportional hazards is the assumption most often broken in practice and
 # least often checked, so the Schoenfeld residual test runs automatically and
 # reports into the check table instead of waiting to be asked for.
-analyse_cox_regression <- function(data, roles, options) {
+analyze_cox_regression <- function(data, roles, options) {
   columns <- c(roles$time, roles$status, roles$predictors)
   f <- complete_frame(data, columns); need_numeric(f$data, roles$time)
   if (any(f$data[[roles$time]] < 0)) stop("Time-to-event values cannot be negative.")
@@ -692,7 +692,7 @@ future_time_points <- function(values, horizon) {
 # The engine refuses irregular spacing instead of quietly treating rows as
 # equally spaced. An ARIMA fitted to unevenly spaced observations produces
 # numbers that look ordinary and mean nothing.
-analyse_time_series <- function(data, roles, options) {
+analyze_time_series <- function(data, roles, options) {
   f <- complete_frame(data, c(roles$outcome, roles$time)); need_numeric(f$data, roles$outcome); need_n(f$used, 12)
   need_variation(f$data, roles$outcome, "ARIMA")
   if (anyDuplicated(f$data[[roles$time]])) stop("The time column contains duplicate values. Keep one observation per time point or combine duplicates first.")

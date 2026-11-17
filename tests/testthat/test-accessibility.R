@@ -59,7 +59,8 @@ testthat::test_that("browser controls and help are present", {
   testthat::expect_match(app, 'href = "#models-panel"', fixed = TRUE)
   helpers <- paste(readLines(project_path("R/ui_helpers.R"), warn = FALSE), collapse = "\n")
 
-  testthat::expect_match(helpers, 'actionButton("test_local_model"', fixed = TRUE)
+  testthat::expect_match(app, 'actionButton("test_local_model"', fixed = TRUE)
+  testthat::expect_match(helpers, 'uiOutput("model_setup")', fixed = TRUE)
   testthat::expect_match(app, 'observeEvent(input$test_local_model', fixed = TRUE)
   testthat::expect_match(app, 'href = "#session-panel"', fixed = TRUE)
   testthat::expect_match(app, 'output$download_session <- downloadHandler', fixed = TRUE)
@@ -136,7 +137,7 @@ testthat::test_that("footer states the version and license", {
 
   version_file <- paste(readLines(project_path("R/version.R"), warn = FALSE), collapse = "\n")
 
-  testthat::expect_match(version_file, 'DAYBREAK_VERSION <- "0.10.1"', fixed = TRUE)
+  testthat::expect_match(version_file, 'DAYBREAK_VERSION <- "1.0.0"', fixed = TRUE)
   testthat::expect_match(app, "DAYBREAK_VERSION", fixed = TRUE)
   testthat::expect_match(app, "Copyright Abhik Roy", fixed = TRUE)
   testthat::expect_match(app, "PolyForm Noncommercial License 1.0.0", fixed = TRUE)

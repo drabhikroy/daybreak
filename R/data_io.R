@@ -190,6 +190,17 @@ SAMPLES <- list(
     name = "Nottingham temperatures",
     note = "Monthly air temperatures in Nottingham from 1920 through 1939. Useful for time-series analysis.",
     method = "time_series"
+  ),
+  diagnoses = list(
+    name = "Multiple sclerosis diagnoses by two neurologists",
+    note = "Two neurologists each rated the same 149 patients as certain, probable, possible, or doubtful. Useful for rater agreement.",
+    method = "agreement"
+  ),
+  bcg = list(
+    name = "BCG vaccine trials",
+    note = "Thirteen trials of the BCG vaccine against tuberculosis, one row per trial with a log risk ratio and its standard error. Useful for meta-analysis.",
+    method = "meta_analysis",
+    requires = "metafor"
   )
 )
 
@@ -227,6 +238,50 @@ sample_choices <- function() {
   stats::setNames(names(x), vapply(x, `[[`, character(1), "name"))
 }
 
+# The Winnipeg patients from Westlund and Kurland (1953), in the form Landis
+# and Koch (1977) used to introduce their reading of kappa. The published table
+# is expanded to one row per patient, which is the shape a reader's own rating
+# file will have.
+sample_diagnoses <- function() {
+  grades <- c("Certain", "Probable", "Possible", "Doubtful")
+  counts <- matrix(c(38, 5, 0, 1,
+                     33, 11, 3, 0,
+                     10, 14, 5, 6,
+                     3, 7, 3, 10), nrow = 4, byrow = TRUE)
+  cells <- expand.grid(winnipeg = seq_along(grades), new_orleans = seq_along(grades))
+  times <- counts[cbind(cells$new_orleans, cells$winnipeg)]
+  rows <- cells[rep(seq_len(nrow(cells)), times), ]
+  data.frame(
+    patient = seq_len(nrow(rows)),
+    new_orleans_neurologist = factor(grades[rows$new_orleans], levels = grades),
+    winnipeg_neurologist = factor(grades[rows$winnipeg], levels = grades)
+  )
+}
+
+# The thirteen trials collected by Colditz and colleagues (1994). The counts
+# are the published ones, and the log risk ratio and its standard error are
+# computed from them here so the arithmetic is on the page.
+sample_bcg <- function() {
+  d <- data.frame(
+    study = c("Aronson 1948", "Ferguson and Simes 1949", "Rosenthal 1960", "Hart and Sutherland 1977",
+              "Frimodt-Moller 1973", "Stein and Aronson 1953", "Vandiviere 1973", "TPT Madras 1980",
+              "Coetzee and Berjak 1968", "Rosenthal 1961", "Comstock 1974", "Comstock and Webster 1969",
+              "Comstock 1976"),
+    year = c(1948, 1949, 1960, 1977, 1973, 1953, 1973, 1980, 1968, 1961, 1974, 1969, 1976),
+    vaccinated_cases = c(4, 6, 3, 62, 33, 180, 8, 505, 29, 17, 186, 5, 27),
+    vaccinated_healthy = c(119, 300, 228, 13536, 5036, 1361, 2537, 87886, 7470, 1699, 50448, 2493, 16886),
+    control_cases = c(11, 29, 11, 248, 47, 372, 10, 499, 45, 65, 141, 3, 29),
+    control_healthy = c(128, 274, 209, 12619, 5761, 1079, 619, 87892, 7232, 1600, 27197, 2338, 17825),
+    latitude = c(44, 55, 42, 52, 13, 44, 19, 13, 27, 42, 18, 33, 33),
+    stringsAsFactors = FALSE
+  )
+  vaccinated <- d$vaccinated_cases + d$vaccinated_healthy
+  control <- d$control_cases + d$control_healthy
+  d$log_risk_ratio <- log((d$vaccinated_cases / vaccinated) / (d$control_cases / control))
+  d$standard_error <- sqrt(1 / d$vaccinated_cases - 1 / vaccinated + 1 / d$control_cases - 1 / control)
+  d
+}
+
 # The built-in examples ------------------------------------------------------
 #
 # Each sample exists to demonstrate a particular method, and each one is
@@ -258,6 +313,8 @@ load_sample <- function(id) {
       date = seq(as.Date("1920-01-01"), by = "month", length.out = length(datasets::nottem)),
       temperature_f = as.numeric(datasets::nottem)
     ),
+    diagnoses = sample_diagnoses(),
+    bcg = sample_bcg(),
     stop("Unknown sample.")
   )
   clean_imported_data(x)

@@ -151,10 +151,27 @@ describe_narrative <- function(result) {
   list(lead = lead, finding = detail, uncertainty = "These are sample descriptions. No population hypothesis was tested.")
 }
 
+# "difference, OJ minus VC" keeps the group names as the reader typed them.
+# Lowercasing the contrast turned category labels into something that was no
+# longer in the data.
+contrast_label <- function(contrast) sprintf("difference, %s,", as.character(contrast))
+
 comparison_narrative <- function(result) {
+  if (result$method == "equivalence") {
+    e <- result$estimates[1, ]; t <- result$tests[1, ]
+    state <- equivalence_state(result)
+    verdict <- switch(state,
+      equivalent = sprintf("The whole interval lies inside the margin of plus or minus %s, so the two groups are equivalent at this margin (larger one-sided p %s).", fmt_num(e$Margin_high, 3), fmt_p(t$p)),
+      apart = sprintf("The whole interval lies outside the margin of plus or minus %s, so the groups differ by more than the margin allows.", fmt_num(e$Margin_high, 3)),
+      sprintf("The interval crosses the margin of plus or minus %s, so these data neither establish equivalence nor rule it out (larger one-sided p %s).", fmt_num(e$Margin_high, 3), fmt_p(t$p)))
+    lead <- paste(interval_sentence(e$Estimate, e$Lower, e$Upper, contrast_label(e$Contrast), interval_width_level(result)), verdict)
+    effect <- if (is.finite(e$Effect)) sprintf("The standardized difference was %s (%s).", fmt_num(e$Effect, 2), e$Effect_name) else ""
+    return(list(lead = lead, finding = effect,
+                uncertainty = "Equivalence is always relative to the margin. A wider margin makes equivalence easier to show and a narrower one harder, so the margin has to be defended on subject-matter grounds and fixed before looking at the result."))
+  }
   if (result$method %in% c("one_sample_t", "independent_t", "paired_t")) {
     e <- result$estimates[1, ]; t <- result$tests[1, ]
-    label <- tolower(as.character(e$Contrast))
+    label <- contrast_label(e$Contrast)
     finding <- paste(interval_sentence(e$Estimate, e$Lower, e$Upper, label, interval_width_level(result)),
                      evidence_sentence(t$p, e$Lower, e$Upper))
     effect <- if (is.finite(e$Effect)) sprintf("The standardized difference was %s (%s).", fmt_num(e$Effect, 2), e$Effect_name) else ""
@@ -191,7 +208,13 @@ comparison_narrative <- function(result) {
   if (result$method %in% c("one_way_anova", "welch_anova", "kruskal_wallis", "repeated_anova", "friedman")) {
     t <- result$tests[1, ]
     direction <- if (t$p < 0.05) "The data provide evidence that at least one group or condition differs from another." else "The data do not clearly separate the groups or conditions at the omnibus level."
-    extra <- if (result$method == "one_way_anova") sprintf("Omega squared was %s, an estimate of the share of outcome variation associated with group after bias correction.", fmt_num(result$estimates$Omega_squared[1], 3)) else ""
+    extra <- if (result$method == "one_way_anova") {
+      sprintf("Omega squared was %s, an estimate of the share of outcome variation associated with group after bias correction.", fmt_num(result$estimates$Omega_squared[1], 3))
+    } else if (result$method == "repeated_anova") {
+      sprintf("Partial eta squared was %s, the share of within-case variation associated with condition. %s",
+              fmt_num(result$estimates$Estimate[1], 3),
+              if (identical(t$Test, "Greenhouse-Geisser corrected")) sprintf("The test is Greenhouse-Geisser corrected, with epsilon %s.", fmt_num(t$Epsilon, 3)) else "")
+    } else ""
     return(list(lead = sprintf("%s The omnibus p-value was %s.", direction, fmt_p(t$p)), finding = extra,
                 uncertainty = "An omnibus result does not identify which pairs differ. Read pairwise intervals when they are supplied, and account for repeated comparisons."))
   }
@@ -255,6 +278,27 @@ model_narrative <- function(result) {
   }
   list(lead = lead, finding = finding,
        uncertainty = "The model describes conditional associations. A causal reading needs a design that supports it, correct time order, and adequate control of shared causes.")
+}
+
+agreement_narrative <- function(result) {
+  e <- result$estimates[1, ]
+  lead <- sprintf("%s was %s, with a %s%% confidence interval from %s to %s, which the Landis and Koch bands call %s agreement.",
+                  e$Coefficient, fmt_num(e$Estimate, 3), conf_percent(result$conf_level), fmt_num(e$Lower, 3), fmt_num(e$Upper, 3), e$Reading)
+  finding <- sprintf("The raters chose the same category for %s of cases. Chance alone would produce %s, given how often each rater used each category.",
+                     fmt_pct(e$Observed_agreement), fmt_pct(e$Chance_agreement))
+  list(lead = lead, finding = finding,
+       uncertainty = "Kappa depends on how evenly the categories are used, so values from samples with different category mixes are not directly comparable. It measures agreement between the raters, not whether either one is correct.")
+}
+
+meta_narrative <- function(result) {
+  e <- result$estimates[1, ]; t <- result$tests
+  lead <- paste(interval_sentence(e$Estimate, e$Lower, e$Upper, "pooled effect", interval_width_level(result)),
+                evidence_sentence(t$p[1], e$Lower, e$Upper))
+  finding <- sprintf("Heterogeneity was I squared %s%% with tau squared %s (Q = %s on %s degrees of freedom, p %s). The %s%% prediction interval for a new study ran from %s to %s.",
+                     fmt_num(result$extras$i2, 1), fmt_num(result$extras$tau2, 3), fmt_num(t$Statistic[2], 2), fmt_num(t$df[2], 0), fmt_p(t$p[2]),
+                     conf_percent(result$conf_level), fmt_num(e$Prediction_lower, 3), fmt_num(e$Prediction_upper, 3))
+  list(lead = lead, finding = finding,
+       uncertainty = "A pooled estimate is only as sound as the studies behind it. This model does not adjust for publication bias or study quality, and with few studies the between-study variance is estimated imprecisely.")
 }
 
 latent_narrative <- function(result) {
@@ -361,16 +405,23 @@ machine_learning_narrative <- function(result) {
 build_narrative <- function(result) {
   spec <- ANALYSES[[result$method]]
   family <- spec$family
-  body <- if (identical(spec$kind, "machine_learning")) machine_learning_narrative(result) else if (family == "Describe") describe_narrative(result) else if (family == "Compare groups") comparison_narrative(result) else if (family == "Study relationships") relationship_narrative(result) else if (family %in% c("Build a model", "Study clustered or repeated data")) model_narrative(result) else if (family %in% c("Study several outcomes", "Study scales and latent variables")) latent_narrative(result) else time_narrative(result)
+  body <- if (identical(result$method, "agreement")) agreement_narrative(result) else if (identical(result$method, "meta_analysis")) meta_narrative(result) else if (identical(spec$kind, "machine_learning")) machine_learning_narrative(result) else if (family == "Describe") describe_narrative(result) else if (family == "Compare groups") comparison_narrative(result) else if (family == "Study relationships") relationship_narrative(result) else if (family %in% c("Build a model", "Study clustered or repeated data")) model_narrative(result) else if (family %in% c("Study several outcomes", "Study scales and latent variables")) latent_narrative(result) else time_narrative(result)
+  cards <- list(
+    list(title = "What the numbers say", body = body$finding, tone = "finding"),
+    list(title = "How much data entered", body = coverage_sentence(result), tone = "data"),
+    list(title = "How cautiously to read it", body = body$uncertainty, tone = "caution"),
+    list(title = "Checks and limits", body = check_summary(result), tone = if (!is.null(result$checks) && any(result$checks$Status == "warn")) "warning" else "check")
+  )
+  # The Bayes factor gets a card of its own, placed second so it is read beside
+  # the estimate it is a second opinion on and before the cautions.
+  if (!is.null(result$evidence)) {
+    second <- list(title = "A second evidence check", body = evidence_sentence_formal(result), tone = "finding")
+    cards <- append(cards, list(second), after = 1)
+  }
   list(
     title = method_name(result$method),
     headline = body$lead,
-    cards = list(
-      list(title = "What the numbers say", body = body$finding, tone = "finding"),
-      list(title = "How much data entered", body = coverage_sentence(result), tone = "data"),
-      list(title = "How cautiously to read it", body = body$uncertainty, tone = "caution"),
-      list(title = "Checks and limits", body = check_summary(result), tone = if (!is.null(result$checks) && any(result$checks$Status == "warn")) "warning" else "check")
-    ),
+    cards = cards,
     warnings = result$warnings
   )
 }

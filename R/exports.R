@@ -113,6 +113,7 @@ report_markdown <- function(result, narrative, accessible = NULL) {
     "## Estimates", "", markdown_table(result$estimates), "",
     "## Tests", "", markdown_table(result$tests), "",
     "## Model fit", "", markdown_table(result$fit), "",
+    if (!is.null(result$evidence)) c("## Second evidence check", "", markdown_table(result$evidence), ""),
     "## Checks", "", markdown_table(checks), "",
     "## Reproducibility note", "",
     "All statistics and sentences in this report were produced from deterministic R code. No language model generated or changed a number.", "",
@@ -173,6 +174,7 @@ report_latex <- function(result, narrative, accessible = NULL) {
     "\\section*{Estimates}", latex_table(result$estimates),
     "\\section*{Tests}", latex_table(result$tests),
     "\\section*{Model fit}", latex_table(result$fit),
+    if (!is.null(result$evidence)) c("\\section*{Second evidence check}", latex_table(result$evidence)),
     "\\section*{Checks}", latex_table(if (!is.null(result$checks)) result$checks[, setdiff(names(result$checks), "Status"), drop = FALSE] else NULL),
     "\\section*{Reproducibility note}",
     "All statistics and sentences in this report were produced from deterministic R code. No language model generated or changed a number.",
@@ -247,20 +249,25 @@ write_report <- function(result, narrative, path, format = "html", accessible = 
 # assembled from the same strings the engine recorded while it worked rather
 # than rebuilt afterwards from the result. Anything the script cannot express
 # faithfully is left out rather than approximated.
-write_reproduction_script <- function(result, path) {
+reproduction_script <- function(result) {
   header <- c(
     "# Reproducible analysis exported from Daybreak.",
     sprintf("# Method: %s", method_name(result$method)),
     "# Replace the path below with the source data file used in the app.",
     "", "df <- read.csv(\"your_data.csv\", check.names = FALSE)", ""
   )
-  writeLines(c(header, result$code, "", "# Session details", "sessionInfo()"), path, useBytes = TRUE)
+  c(header, result$code, second_evidence_code(result), "", "# Session details", "sessionInfo()")
+}
+
+write_reproduction_script <- function(result, path) {
+  writeLines(reproduction_script(result), path, useBytes = TRUE)
   invisible(path)
 }
 
 write_result_tables <- function(result, directory) {
   dir.create(directory, recursive = TRUE, showWarnings = FALSE)
-  tables <- list(estimates = result$estimates, tests = result$tests, model_fit = result$fit, checks = result$checks)
+  tables <- list(estimates = result$estimates, tests = result$tests, model_fit = result$fit,
+                 second_evidence = result$evidence, checks = result$checks)
   for (name in names(tables)) {
     if (!is.null(tables[[name]]) && nrow(tables[[name]])) {
       utils::write.csv(tables[[name]], file.path(directory, paste0(name, ".csv")), row.names = FALSE, na = "")

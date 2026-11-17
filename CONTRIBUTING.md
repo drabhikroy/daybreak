@@ -13,7 +13,20 @@ source("tests/run_tests.R")
 ```
 
 It stops on the first failure. If a test fails for a reason unrelated to your
-change, say so in the pull request rather than adjusting the assertion.
+change, say so in the pull request and leave the assertion as it is.
+
+A change to `www/app.js` also needs the browser check, which loads the script
+into a simulated page and presses its controls. It needs Node and one package:
+
+```sh
+npm install --no-save jsdom
+node tests/browser-smoke.js
+```
+
+The stand-in for Shiny in that file applies the rule the real one does: a
+message handler has to declare exactly one argument. A handler that declares
+none is refused with an exception, and every handler registered after it is
+lost with it.
 
 ## Writing
 
@@ -64,14 +77,28 @@ Interactive controls are at least 44 pixels tall. The test reads the stylesheet.
 ## Adding a method
 
 1. Add the entry to `ANALYSES` in `R/catalog.R`. Nothing in that file computes.
-2. Write `analyse_<engine>()` in the matching engines file.
+2. Write `analyze_<engine>()` in the matching engines file.
 3. Add a branch to `R/reporting.R` and one to `R/explanations.R`.
 4. Add a figure to `R/plots.R` if the method needs one that does not exist.
 5. Add the packages it needs to `install.R` and `DESCRIPTION`.
-6. Add a test that runs it end to end through both writing layers.
+6. Add it to a situation in `METHOD_GUIDE` in `R/catalog.R`, and give it a
+   drawing in `method_visual_ui()`.
+7. Add a test that runs it end to end through both writing layers, and one
+   that checks its numbers against a calculation that does not share its code.
+8. Add it to `docs/METHODS.md` and `docs/METHOD_AUDIT.md`, with a peer-reviewed
+   source for anything that is not a base R routine.
 
 The interface builds itself from the catalog, so the selector, the directory,
 the feasibility hints, and the settings form need no editing.
+
+## Evidence
+
+A verdict does not rest on one number. Where a default prior is well
+established, a method carries a Bayes factor beside its interval, computed in
+`R/evidence.R` from the finished record, and `weighed_signal()` reads the two
+together. A new method that tests a claim should either join
+`EVIDENCE_METHODS` with a cited prior or state in its checks why it has no
+second measure.
 
 ## License
 

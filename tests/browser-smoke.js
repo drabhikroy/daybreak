@@ -28,16 +28,50 @@ const dom = new JSDOM(`
       <div class="static-dialog-card"><button class="static-dialog-close" data-close-static-dialog="true">×</button></div>
     </div>
     <select id="method"><option value="descriptives">Descriptions</option></select>
-    <a data-modal-method="descriptives"><small class="method-data-fit"></small></a>
+    <div class="method-picker-shell">
+      <input id="method-search" type="search">
+      <p id="method-search-status"></p>
+      <section class="method-family-section">
+        <a class="method-name-choice" data-modal-method="descriptives" data-search="numeric summaries describe"><small class="method-data-fit"></small></a>
+      </section>
+      <section class="method-family-section">
+        <a class="method-name-choice" data-modal-method="independent_t" data-search="independent samples t test compare groups"><small class="method-data-fit"></small></a>
+      </section>
+      <a class="method-guide-pick" data-modal-method="descriptives">Numeric summaries</a>
+    </div>
+    <div id="tour-panel" class="static-dialog-overlay" aria-hidden="true">
+      <div class="static-dialog-card"><button class="static-dialog-close" data-close-static-dialog="true">×</button>
+        <div class="tour" data-tour-count="3">
+          <div class="tour-slide is-active" data-tour-slide="1"></div>
+          <div class="tour-slide" data-tour-slide="2"></div>
+          <div class="tour-slide" data-tour-slide="3"></div>
+          <span class="tour-dot is-active" data-tour-dot="1"></span><span class="tour-dot" data-tour-dot="2"></span><span class="tour-dot" data-tour-dot="3"></span>
+          <button class="tour-back" data-tour-step="-1" disabled>Back</button>
+          <button class="tour-next" data-tour-step="1">Next</button>
+          <button class="tour-done" data-tour-done="true" hidden>Get started</button>
+        </div>
+      </div>
+    </div>
+    <button class="model-card" data-model="gemma3:4b">Gemma</button>
+    <button id="run_analysis">Run</button>
   </body>
 `, { runScripts: "outside-only", url: "http://127.0.0.1" });
 
 const { window } = dom;
 const { document } = window;
 window.__handlers = {};
+window.__inputs = {};
+// Shiny rejects a handler that does not declare exactly one argument, and the
+// rejection is an exception. The stand-in applies the same rule, so a handler
+// that would break the real page breaks this test.
 window.Shiny = {
-  addCustomMessageHandler(name, handler) { window.__handlers[name] = handler; },
-  setInputValue() {},
+  addCustomMessageHandler(name, handler) {
+    if (typeof handler !== "function" || handler.length !== 1) {
+      throw new Error("handler must be a function that takes one argument: " + name);
+    }
+    window.__handlers[name] = handler;
+  },
+  setInputValue(name, value) { window.__inputs[name] = value; },
 };
 window.eval(fs.readFileSync(path.resolve(__dirname, "../www/app.js"), "utf8"));
 document.dispatchEvent(new window.Event("DOMContentLoaded"));
@@ -87,5 +121,46 @@ window.history.replaceState(null, "", "/#methods-panel");
 window.Daybreak.syncStaticDialog();
 document.querySelector(".static-dialog-backdrop").click();
 check(document.querySelector("#methods-panel").getAttribute("aria-hidden") === "true", "Dialog backdrop did not close the panel");
+
+for (const name of ["scroll-main", "landing-visibility", "workflow-progress", "method-feasibility",
+                    "restore-display", "close-static-dialog", "click-run"]) {
+  check(typeof window.__handlers[name] === "function", "No handler was registered for " + name);
+}
+
+let runs = 0;
+document.querySelector("#run_analysis").addEventListener("click", function () { runs += 1; });
+window.__handlers["click-run"]({});
+check(runs === 1, "The run message did not press the run button");
+
+window.__handlers["workflow-progress"]({ step: 2 });
+check(document.querySelector("#workflow-step-2").open, "Workflow message did not open its step");
+
+check(document.querySelector(".method-guide-pick").classList.contains("is-unlikely"), "The guide pick did not dim with its card");
+
+const search = document.querySelector("#method-search");
+search.value = "groups";
+search.dispatchEvent(new window.Event("input", { bubbles: true }));
+check(document.querySelector('.method-name-choice[data-modal-method="descriptives"]').hidden, "Search left a card that does not match");
+check(!document.querySelector('.method-name-choice[data-modal-method="independent_t"]').hidden, "Search hid a card that matches");
+check(document.querySelectorAll(".method-family-section")[0].hidden, "Search left an empty family heading");
+check(document.querySelector("#method-search-status").textContent === "1 method matches.", "Search did not report its count");
+search.value = "zzzz";
+search.dispatchEvent(new window.Event("input", { bubbles: true }));
+check(document.querySelector("#method-search-status").textContent.startsWith("No method matches"), "Search did not report an empty result");
+search.value = "";
+search.dispatchEvent(new window.Event("input", { bubbles: true }));
+check(!document.querySelector('.method-name-choice[data-modal-method="descriptives"]').hidden, "Clearing the search did not restore the list");
+
+check(window.localStorage.getItem("daybreak-tour-seen") === "yes", "The walkthrough was not marked as seen on a first visit");
+document.querySelector(".tour-next").click();
+check(document.querySelector('[data-tour-slide="2"]').classList.contains("is-active"), "The walkthrough did not advance");
+check(!document.querySelector(".tour-back").disabled, "Back stayed disabled past the first slide");
+document.querySelector(".tour-next").click();
+check(document.querySelector(".tour-next").hidden && !document.querySelector(".tour-done").hidden, "The last slide did not offer its closing button");
+document.querySelector(".tour-next").click();
+check(document.querySelector('[data-tour-slide="3"]').classList.contains("is-active"), "The walkthrough ran past its last slide");
+
+document.querySelector(".model-card").click();
+check(window.__inputs.model_choice === "gemma3:4b", "A model card did not report its model");
 
 console.log("Browser interactions passed");

@@ -33,7 +33,13 @@ icon_svg <- function(name) {
     spark = '<path d="m12 3 1.8 4.8L19 9.5l-5.2 1.7L12 16l-1.8-4.8L5 9.5l5.2-1.7L12 3Z"></path>',
     alert = '<path d="M12 4 2.8 20h18.4L12 4Z"></path><path d="M12 10v4M12 17.4h.01"></path>',
     copy = '<rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h8"></path>',
-    arrow = '<path d="M5 12h13M13 6l6 6-6 6"></path>'
+    arrow = '<path d="M5 12h13M13 6l6 6-6 6"></path>',
+    equal = '<path d="M5 9h14M5 15h14"></path>',
+    search = '<circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.8-3.8"></path>',
+    code = '<path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"></path>',
+    play = '<path d="M7 5v14l11-7z"></path>',
+    trash = '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"></path>',
+    compass = '<circle cx="12" cy="12" r="9"></circle><path d="m15.5 8.5-2 5-5 2 2-5z"></path>'
   )
   shiny::HTML(sprintf('<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">%s</svg>', paths[[name]] %||% paths$spark))
 }
@@ -76,6 +82,7 @@ role_choices <- function(type, data) {
     predictors_optional = sig$all,
     any_many = sig$all,
     numeric_or_factor_one = unique(c(sig$numeric, sig$categorical)),
+    label_optional = c("None" = "", stats::setNames(sig$all, sig$all)),
     numeric_or_date_one = sig$all[vapply(data, function(x) is.numeric(x) || inherits(x, c("Date", "POSIXt")), logical(1))],
     sig$all
   )
@@ -85,7 +92,7 @@ role_choices <- function(type, data) {
 # method stays available because column assignments and data preparation can
 # change whether the model runs.
 # A quick read of whether the loaded columns could satisfy a method. This runs
-# for all fifty-three methods on every data change, so it works from the column
+# for every method in the catalog on each data change, so it works from the column
 # profile rather than trying anything. It is deliberately optimistic: it marks
 # a method doubtful only when the data plainly cannot support it, because a
 # false discouragement is worse than an error message the reader can act on.
@@ -142,11 +149,17 @@ method_feasibility <- function(method_spec, data) {
   if (method_spec$id %in% regression_ids && (length(sig$numeric) < 1L || ncol(data) < 2L)) {
     reasons <- c(reasons, "It needs a numeric outcome and at least one separate predictor column.")
   }
-  if (method_spec$id %in% c("independent_t", "mann_whitney") && !any(observed_counts == 2L)) {
+  if (method_spec$id %in% c("independent_t", "mann_whitney", "equivalence") && !any(observed_counts == 2L)) {
     reasons <- c(reasons, "It needs a group column with exactly two observed categories.")
   }
   if (method_spec$id %in% c("one_way_anova", "welch_anova", "kruskal_wallis") && !any(observed_counts >= 3L & observed_counts <= 12L)) {
     reasons <- c(reasons, "It needs a group column with at least three observed categories.")
+  }
+  if (method_spec$id == "agreement" && sum(observed_counts >= 2L & observed_counts <= 12L) < 2L) {
+    reasons <- c(reasons, "It needs two columns of category ratings for the same cases.")
+  }
+  if (method_spec$id == "meta_analysis" && length(sig$numeric) < 2L) {
+    reasons <- c(reasons, "It needs one numeric column of effects and one of standard errors.")
   }
   if (method_spec$id == "mcnemar" && sum(observed_counts == 2L) < 2L) {
     reasons <- c(reasons, "It needs two different binary columns.")
@@ -330,6 +343,12 @@ sample_role_defaults <- function(sample_id, method_id) {
     ),
     nottem = list(
       time_series = list(outcome = "temperature_f", time = "date")
+    ),
+    diagnoses = list(
+      agreement = list(rater_1 = "new_orleans_neurologist", rater_2 = "winnipeg_neurologist")
+    ),
+    bcg = list(
+      meta_analysis = list(effect = "log_risk_ratio", se = "standard_error", study = "study")
     )
   )
   if (!length(sample_id) || !length(method_id) || !sample_id %in% names(defaults)) return(list())
@@ -460,6 +479,14 @@ analysis_options_ui <- function(method_id, data, ordinal_outcome = NULL) {
   specific <- switch(method_id,
     one_sample_t = numericInput("mu", "Reference mean", value = 0),
     independent_t = checkboxInput("equal_var", "Use a pooled equal-variance test", FALSE),
+    equivalence = tagList(
+      numericInput("equivalence_margin", "Equivalence margin, in the units of the outcome", NA, min = 0, step = 0.1),
+      p(class = "micro-note", "The smallest difference that would matter in your setting. Leave blank and Daybreak uses half a pooled standard deviation and says so.")
+    ),
+    agreement = selectInput("kappa_weights", "Credit for near misses", c(
+      "None, categories have no order" = "none",
+      "Linear, for ordered categories" = "linear",
+      "Quadratic, for ordered categories" = "quadratic")),
     correlation = selectInput("cor_method", "Correlation type", c("Pearson" = "pearson", "Spearman" = "spearman", "Kendall" = "kendall")),
     partial_correlation = selectInput("cor_method", "Correlation type", c("Pearson" = "pearson", "Spearman" = "spearman")),
     fisher_exact = numericInput("simulations", "Monte Carlo samples for larger tables", 10000, min = 2000, step = 1000),
@@ -519,7 +546,7 @@ analysis_options_ui <- function(method_id, data, ordinal_outcome = NULL) {
   )
   confidence_methods <- c(
     "one_sample_t", "independent_t", "paired_t", "mann_whitney", "paired_wilcoxon",
-    "one_proportion", "two_proportions",
+    "one_proportion", "two_proportions", "equivalence", "agreement", "meta_analysis",
     "correlation", "partial_correlation", "linear_regression", "moderation",
     "logistic_regression", "poisson_regression", "negative_binomial",
     "multinomial_regression", "ordinal_regression", "hlm_linear", "hlm_logistic",
@@ -588,7 +615,7 @@ collect_roles <- function(input, method_spec) {
 }
 
 collect_options <- function(input) {
-  ids <- c("conf_level", "mu", "equal_var", "cor_method", "simulations", "reference_proportion", "continuity_correction",
+  ids <- c("conf_level", "mu", "equal_var", "equivalence_margin", "kappa_weights", "cor_method", "simulations", "reference_proportion", "continuity_correction",
            "factor_interaction", "components", "clusters", "random_seed", "factors",
            "rotation", "factor_method", "estimator", "missing_method", "ordered", "ordinal_order", "bootstrap", "reml",
            "growth_random_slope", "ar_p", "ar_d", "ar_q", "frequency", "forecast_horizon",
@@ -721,17 +748,43 @@ method_visual_ui <- function(method) {
     growth_model = '<path class="viz-muted-line" d="M9 51 26 42 43 29 60 18M9 47 26 39 43 34 60 30M9 55 26 47 43 39 60 28M9 42 26 34 43 23 60 13"/><path class="viz-trend" d="M9 49 26 40 43 31 60 22"/>',
     kaplan_meier = '<path class="viz-axis" d="M8 58h54M9 58V10"/><path class="viz-secondary-line" d="M10 15h13v8h12v9h12v10h13"/><path class="viz-trend" d="M10 15h9v5h13v6h14v8h14"/>',
     cox_regression = '<path class="viz-axis" d="M35 9v51"/><path class="viz-muted-line" d="M12 19h31M12 15v8M43 15v8M27 34h32M27 30v8M59 30v8M18 49h25M18 45v8M43 45v8"/><circle class="viz-secondary" cx="27" cy="19" r="4"/><circle class="viz-primary" cx="44" cy="34" r="4"/><circle class="viz-muted" cx="31" cy="49" r="4"/>',
+    equivalence = '<rect class="viz-secondary-soft" x="22" y="10" width="26" height="48" rx="3"/><path class="viz-muted-line" d="M35 8v52"/><path class="viz-trend" d="M27 34h14"/><path class="viz-trend" d="M27 29v10M41 29v10"/><circle class="viz-primary" cx="34" cy="34" r="4"/>',
+    agreement = '<rect class="viz-primary" x="9" y="9" width="15" height="15" rx="3"/><rect class="viz-secondary-soft" x="27" y="9" width="15" height="15" rx="3"/><rect class="viz-group" x="45" y="9" width="15" height="15" rx="3"/><rect class="viz-secondary-soft" x="9" y="27" width="15" height="15" rx="3"/><rect class="viz-primary" x="27" y="27" width="15" height="15" rx="3"/><rect class="viz-secondary-soft" x="45" y="27" width="15" height="15" rx="3"/><rect class="viz-group" x="9" y="45" width="15" height="15" rx="3"/><rect class="viz-secondary-soft" x="27" y="45" width="15" height="15" rx="3"/><rect class="viz-primary" x="45" y="45" width="15" height="15" rx="3"/>',
+    meta_analysis = '<path class="viz-axis" d="M40 8v52"/><path class="viz-muted-line" d="M14 15h30M22 26h34M10 37h26M24 48h22"/><rect class="viz-secondary" x="26" y="12" width="6" height="6"/><rect class="viz-secondary" x="35" y="22" width="8" height="8"/><rect class="viz-secondary" x="20" y="34.5" width="5" height="5"/><rect class="viz-secondary" x="31" y="44.5" width="7" height="7"/><path class="viz-primary" d="M24 58l8-4 8 4-8 4z"/>',
     time_series = '<path class="viz-axis" d="M7 58h56"/><path class="viz-secondary-line" d="M8 44 15 31 22 38 29 20 36 32 43 16 50 28"/><path class="viz-trend" d="M50 28 57 19 63 24"/><path class="viz-muted-line" d="M50 11v46"/>'
   )
   drawing <- drawings[[id]] %||% drawings$descriptives
 
+  # The parameter is a catalog entry, and the walkthrough passes a bare id in
+  # the same shape so it can borrow a drawing without inventing a method.
   div(
     class = paste("method-mini-visual", paste0("visual-", gsub("_", "-", id))), `aria-hidden` = "true",
     HTML(paste0('<svg viewBox="0 0 70 68" focusable="false" shape-rendering="geometricPrecision">', drawing, "</svg>"))
   )
 }
 
-# The directory groups by the reader's question rather than by statistical
+# One card for one method. The same card is used in the family lists and in
+# search results, and the words a search should match travel with it as an
+# attribute so the filter never has to read the visible text back out.
+method_card_ui <- function(id) {
+  x <- ANALYSES[[id]]
+  type <- if (identical(x$kind, "machine_learning")) "machine learning" else "statistics"
+  tags$a(
+    href = "#method-control", class = "method-name-choice", role = "button",
+    `data-modal-method` = id,
+    `data-search` = tolower(paste(x$name, x$question, x$description, x$family, type, x$level)),
+    method_visual_ui(x),
+    div(class = "method-name-choice-text",
+        span(class = "method-name-choice-top", strong(x$name), span(class = paste("level-chip", tolower(x$level)), x$level)),
+        span(class = "method-name-question", x$question),
+        tags$small(class = "method-data-fit", ""),
+        if (length(missing_packages(x))) {
+          tags$small(class = "method-package-line", paste("Needs", paste(missing_packages(x), collapse = ", ")))
+        })
+  )
+}
+
+# The directory groups by the reader's question instead of by statistical
 # family, matching the selector, so moving between the two does not require
 # relearning where anything is.
 method_family_sections_ui <- function(families, kind) {
@@ -739,42 +792,69 @@ method_family_sections_ui <- function(families, kind) {
     group_ids <- names(ANALYSES)[vapply(ANALYSES, function(x) {
       identical(x$family, group_name) && identical(x$kind, kind)
     }, logical(1))]
+    if (!length(group_ids)) return(NULL)
     tags$section(
       class = "method-family-section",
       div(class = "method-family-heading", h3(group_name),
           span(sprintf("%d %s", length(group_ids), if (length(group_ids) == 1) "method" else "methods"))),
-      div(class = "method-name-list", lapply(group_ids, function(id) {
-        x <- ANALYSES[[id]]
-        tags$a(
-          href = "#method-control", class = "method-name-choice", role = "button",
-          `data-modal-method` = id,
-          method_visual_ui(x),
-          span(class = "method-name-choice-top", strong(x$name), span(class = paste("level-chip", tolower(x$level)), x$level)),
-          span(class = "method-name-question", x$question),
-          tags$small(class = "method-data-fit", ""),
-          if (length(missing_packages(x))) {
-            tags$small(class = "method-package-line", paste("Needs", paste(missing_packages(x), collapse = ", ")))
-          }
-        )
-      }))
+      div(class = "method-name-list", lapply(group_ids, method_card_ui))
     )
   })
+}
+
+# The guide as a set of collapsible goals. Each is a native disclosure, so it
+# opens with the keyboard and is announced as expanded or collapsed without
+# any script. The first goal starts open so the panel never looks empty.
+method_guide_ui <- function() {
+  div(class = "method-guide",
+      p(class = "method-guide-lead", "Start from your situation. Open the goal that sounds like yours, find the line that matches, and choose a method. When a line offers more than one, the first is the usual place to begin."),
+      lapply(seq_along(METHOD_GUIDE), function(i) {
+        goal <- METHOD_GUIDE[[i]]
+        tags$details(
+          class = "method-guide-goal", open = if (i == 2L) "open" else NULL,
+          tags$summary(span(class = "method-guide-goal-name", goal$goal),
+                       span(class = "method-guide-goal-count",
+                            sprintf("%d %s", length(goal$rows), if (length(goal$rows) == 1L) "situation" else "situations"))),
+          div(class = "method-guide-rows", lapply(goal$rows, function(row) {
+            div(class = "method-guide-row",
+                p(class = "method-guide-when", row$when),
+                div(class = "method-guide-picks", lapply(row$methods, function(id) {
+                  tags$a(href = "#method-control", class = "method-guide-pick", role = "button",
+                         `data-modal-method` = id, ANALYSES[[id]]$name, icon_svg("arrow"))
+                })))
+          }))
+        )
+      }))
 }
 
 # The full catalog as a browsable list. It is reachable before any data is
 # loaded, because deciding what is possible is often the reason someone opens
 # a tool like this in the first place.
 methods_directory_ui <- function() {
+  count <- length(ANALYSES)
+  kind_button <- function(kind, label, active = FALSE) {
+    tags$button(type = "button", class = paste("method-kind-button", if (active) "active"), role = "tab",
+                `aria-selected` = tolower(as.character(active)), `data-method-kind` = kind, label)
+  }
   div(
     class = "method-picker-shell",
     div(class = "method-picker-intro",
-        div(class = "eyebrow", icon_svg("chart"), "Methods by research question"),
+        div(class = "eyebrow", icon_svg("chart"), sprintf("%d methods, one way of reading them", count)),
         h2("What do you want to learn from the data?"),
-        p("Statistics describes patterns and quantifies uncertainty. Machine learning focuses on prediction, grouping, and dimension reduction. Choose the area that matches your question.")),
-    div(class = "method-kind-switch", role = "tablist", `aria-label` = "Method type",
-        tags$button(type = "button", class = "method-kind-button active", role = "tab", `aria-selected` = "true", `data-method-kind` = "statistics", "Statistics"),
-        tags$button(type = "button", class = "method-kind-button", role = "tab", `aria-selected` = "false", `data-method-kind` = "machine_learning", "Machine learning")),
-    div(class = "method-kind-panel active", `data-method-kind-panel` = "statistics",
+        p("Find a method by describing your situation, by browsing the full list, or by searching for a name you already know.")),
+    div(class = "method-picker-tools",
+        div(class = "method-kind-switch", role = "tablist", `aria-label` = "Ways to find a method",
+            kind_button("guide", "Help me choose", TRUE),
+            kind_button("statistics", "Statistics"),
+            kind_button("machine_learning", "Machine learning")),
+        div(class = "method-search",
+            tags$label(class = "visually-hidden", `for` = "method-search", "Search methods"),
+            icon_svg("search"),
+            tags$input(id = "method-search", type = "search", autocomplete = "off", spellcheck = "false",
+                       placeholder = sprintf("Search all %d methods", count)))),
+    p(id = "method-search-status", class = "method-search-status", role = "status", `aria-live` = "polite"),
+    div(class = "method-kind-panel active", `data-method-kind-panel` = "guide", method_guide_ui()),
+    div(class = "method-kind-panel", `data-method-kind-panel` = "statistics", `aria-hidden` = "true",
         div(class = "method-kind-note", strong("Statistical methods"), span("Describe samples, compare groups, estimate relationships, and quantify uncertainty. Dimmed cards may need different column types, but they remain selectable.")),
         div(class = "method-directory-groups", method_family_sections_ui(ANALYSIS_FAMILIES, "statistics"))),
     div(class = "method-kind-panel", `data-method-kind-panel` = "machine_learning", `aria-hidden` = "true",
@@ -840,52 +920,52 @@ local_models_ui <- function() {
     class = "models-shell",
     div(
       class = "models-lead",
-      div(class = "eyebrow", icon_svg("spark"), "Optional and local"),
-      h2("Let a local model restate the finished result"),
-      p("Daybreak already writes the everyday explanation without a language model. If you choose this option, Ollama rewrites that completed explanation on your Mac. Raw rows are never sent to the model, and no internet service receives the result.")
+      div(class = "eyebrow", icon_svg("spark"), "Optional, and it stays on this computer"),
+      h2("Let a local model reword the finished result"),
+      p("Daybreak writes every explanation itself, with no language model involved. If you would like a second wording, a small model running on this computer can restate the finished text. It never sees your rows, and Daybreak throws away any rewrite that adds, drops, or changes a number.")
     ),
-    div(
-      class = "model-setup-grid",
-      tags$section(
-        class = "model-setup-card",
-        span(class = "model-step-number", "1"),
-        div(h3("Install Ollama"),
-            p("Download the macOS app, move it to Applications, and open it once."),
-            tags$a(href = "https://ollama.com/download", target = "_blank", rel = "noopener",
-                   class = "model-link", "Open the Ollama download page"))
-      ),
-      tags$section(
-        class = "model-setup-card",
-        span(class = "model-step-number", "2"),
-        div(h3("Choose a model"),
-            p("Select an installed model or download one of the three choices below. The recommended download is 3.4 GB."))
-      ),
-      tags$section(
-        class = "model-setup-card",
-        span(class = "model-step-number", "3"),
-        div(h3("Test, then rewrite"),
-            p("Test the selected model here. After an analysis, open Exact values and optional rewrite below the figure."))
-      )
-    ),
-    div(
-      class = "model-control-card",
-      uiOutput("ollama_status"),
-      selectInput("local_model", "Local model", choices = local_model_choices(), selected = "qwen3.5:4b"),
-      div(class = "model-control-actions",
-          actionButton("refresh_local_models", "Check Ollama", class = "model-secondary-button"),
-          actionButton("download_local_model", "Download selected model", class = "model-primary-button"),
-          actionButton("test_local_model", "Test selected model", class = "model-secondary-button")),
-      uiOutput("model_download_status"),
-      uiOutput("model_test_status")
-    ),
-    div(class = "model-choice-grid", lapply(names(LOCAL_MODEL_CATALOG), function(id) {
-      model <- LOCAL_MODEL_CATALOG[[id]]
-      div(class = "model-choice-card",
-          div(class = "model-choice-top", strong(model$label), span(model$size)),
-          p(model$note), tags$code(id))
-    })),
+    uiOutput("model_setup"),
     div(class = "model-safety-note", icon_svg("check"),
-        p("Daybreak rejects a rewrite if any number is added, removed, or changed. The original explanation always remains visible. Models with cloud in their name are not offered."))
+        p("Three steps, and you can stop after any of them. Nothing here is needed for the statistics, the figures, or the reports."))
+  )
+}
+
+# One step of the setup. The state shown beside the title is read from the
+# computer each time, so a step never claims to be done when it is not.
+model_step_ui <- function(number, title, state, ...) {
+  label <- switch(state, done = "Done", part = "Almost", wait = "Waiting", "Now")
+  tags$section(class = paste("setup-step", paste0("is-", state)),
+      div(class = "setup-step-head",
+          span(class = "setup-step-number", number),
+          h3(title),
+          span(class = "setup-step-state", icon_svg(switch(state, done = "check", wait = "help", "arrow")), label)),
+      div(class = "setup-step-body", ...))
+}
+
+# A model as a card that can be picked. The catch is given the same weight as
+# the strength, because a list of strengths alone leaves the reader to find the
+# rest out after a download of several gigabytes.
+model_card_ui <- function(id, picked, in_use, installed, fit = NULL, recommended = FALSE) {
+  model <- LOCAL_MODEL_CATALOG[[id]]
+  held <- model_installed(id, installed)
+  tags$button(
+    type = "button", role = "radio", `aria-checked` = tolower(as.character(identical(picked, id))),
+    class = paste("model-card", if (identical(picked, id)) "is-picked", if (held) "is-held",
+                  if (!is.null(fit)) paste0("fit-", gsub(" ", "-", fit))),
+    `data-model` = id,
+    div(class = "model-card-top", strong(model$label), span(class = "model-card-size", model$size)),
+    div(class = "model-card-flags",
+        if (identical(in_use, id)) span(class = "model-flag is-in-use", icon_svg("check"), "In use"),
+        if (held && !identical(in_use, id)) span(class = "model-flag is-held", "Installed"),
+        if (isTRUE(recommended)) span(class = "model-flag is-suggested",
+                                      if (identical(fit, "too large")) "The lightest choice" else "Suggested for this computer"),
+        if (!is.null(fit)) span(class = paste("model-flag", paste0("is-fit-", gsub(" ", "-", fit))),
+                                switch(fit, comfortable = "Fits comfortably", workable = "Fits, with little room to spare",
+                                       `too large` = "Too large for this memory", "Fit unknown"))),
+    p(class = "model-card-line", sprintf("Runs well with %s GB of memory or more. %s", model$min_ram, model$speed)),
+    p(class = "model-card-line", strong("Good at: "), model$good),
+    p(class = "model-card-line", strong("The catch: "), model$tradeoff),
+    tags$code(id)
   )
 }
 
@@ -952,7 +1032,8 @@ landing_quick_start_ui <- function() {
         span(class = "quick-start-go", "Run it", icon_svg("arrow"))
       )
     })),
-    p(class = "quick-start-note", "Each one opens with its columns already assigned. Change anything afterwards.")
+    p(class = "quick-start-note", "Each one opens with its columns already assigned. Change anything afterwards. ",
+      tags$a(href = "#tour-panel", class = "quick-start-tour", role = "button", "New here? Take the two-minute walkthrough."))
   )
 }
 
@@ -961,9 +1042,9 @@ landing_page_ui <- function() {
     class = "welcome",
     div(
       class = "welcome-copy",
-      div(class = "eyebrow", icon_svg("sun"), "Private, local, reproducible"),
+      div(class = "eyebrow", icon_svg("sun"), "Your data never leaves this computer"),
       h1("From raw columns to a report you can read."),
-      p("Choose a method and assign its columns on the left. Daybreak computes the statistics, describes the result with calibrated wording, checks what it can, and prepares publication-ready files."),
+      p(sprintf("Bring a file and a question. Daybreak runs the analysis, tells you what it found in plain words, shows the numbers behind every sentence, and hands you a report and the R code. %d methods, from a simple average to a meta-analysis.", length(ANALYSES))),
       landing_quick_start_ui(),
       div(
         class = "welcome-points",
@@ -1078,10 +1159,10 @@ accessible_explanation_ui <- function(explanation) {
 
 local_rewrite_ui <- function() {
   tags$details(class = "local-rewrite-panel",
-    tags$summary(div(strong("Optional local rewrite"), span("Restate the checked answer on this Mac"))),
+    tags$summary(div(strong("Optional local rewrite"), span("Restate the checked answer on this computer"))),
     div(class = "local-rewrite-callout",
         div(h3("Want another wording?"),
-            p("An optional model running on this Mac can restate the completed explanation. Daybreak does not give it raw rows or ask it to calculate statistics.")),
+            p("An optional model running on this computer can restate the completed explanation. Daybreak does not give it raw rows or ask it to calculate statistics.")),
         div(class = "local-rewrite-actions",
             actionButton("restate_local", "Rewrite with a local model", class = "model-primary-button"),
             tags$a(href = "#models-panel", class = "model-text-link", "Set up local models"))),
@@ -1091,7 +1172,7 @@ local_rewrite_ui <- function() {
 result_table_section_ui <- function(title, data, open = FALSE) {
   tags$details(
     class = "result-table-section", open = if (isTRUE(open) && !is.null(data) && nrow(data)) "open" else NULL,
-    tags$summary(div(strong(title), span(if (is.null(data) || !nrow(data)) "No table" else sprintf("%s rows", nrow(data))))),
+    tags$summary(div(strong(title), span(if (is.null(data) || !nrow(data)) "No table" else sprintf("%s %s", nrow(data), if (nrow(data) == 1L) "row" else "rows")))),
     div(class = "result-table-section-body", table_ui(data))
   )
 }
@@ -1101,22 +1182,53 @@ result_table_section_ui <- function(title, data, open = FALSE) {
 # a summary of averages would invent a claim the reader never made.
 DESCRIPTIVE_METHODS <- c(
   "descriptives", "frequencies", "missingness", "pca", "factor_analysis",
-  "kmeans_clustering", "hierarchical_clustering", "density_clustering",
+  "kmeans_clustering", "hierarchical_clustering", "dbscan_clustering",
   "hdbscan_clustering", "reliability"
 )
 
-# Four states, matching the four the everyday layer already uses in prose. The
-# chip is a second reading of the same judgment, not a new one, so it is
-# computed from the same function rather than from a threshold applied here.
+# The value that means "nothing going on" for a method. Ratios are compared
+# with one, a single proportion with the reference the reader typed, and
+# everything else with zero.
+result_null <- function(result) {
+  if (result$method %in% RATIO_METHODS) return(1)
+  if (identical(result$method, "one_proportion")) return(result$extras$reference %||% 0.5)
+  0
+}
+
+# The chip is a second reading of the judgment the prose already makes, not a
+# new one, so it comes from the same functions and adds no threshold of its
+# own.
 result_verdict <- function(result) {
   if (result$method %in% DESCRIPTIVE_METHODS) {
     return(list(tone = "summary", label = "Summary", detail = "This describes the file rather than testing a claim."))
   }
-  null <- if (result$method %in% RATIO_METHODS) 1 else 0
+  # A prediction method is judged by how it scored on rows it never saw, which
+  # is a measurement and not a test, so it gets a chip that says that.
+  if (identical(ANALYSES[[result$method]]$kind, "machine_learning")) {
+    return(list(tone = "summary", label = "Holdout score",
+                detail = "Judge this by its score on the rows held back for testing, shown below."))
+  }
+  # Equivalence turns the usual reading round: the good news is an interval
+  # that stays inside a band, not one that clears zero.
+  if (identical(result$method, "equivalence")) {
+    return(switch(
+      equivalence_state(result),
+      equivalent = list(tone = "clear", label = "Close enough",
+                        detail = "The whole plausible range of differences sits inside the margin."),
+      apart = list(tone = "tentative", label = "Further apart than the margin",
+                   detail = "The whole plausible range of differences sits outside the margin."),
+      list(tone = "uncertain", label = "Not settled",
+           detail = "The plausible range of differences crosses the margin, so sameness is neither shown nor ruled out.")
+    ))
+  }
   switch(
-    plain_signal(result, null),
+    weighed_signal(result, result_null(result))$state,
     clear = list(tone = "clear", label = "Clear signal",
                  detail = "A pattern this strong would be unusual if there were nothing beyond this sample."),
+    tentative = list(tone = "tentative", label = "Tentative signal",
+                     detail = "The interval points to a pattern, but the second check finds only thin support for it."),
+    null_favored = list(tone = "null", label = "Points to no effect",
+                        detail = "The interval includes no effect, and the second check favors that account over a real one."),
     uncertain = list(tone = "uncertain", label = "Not clear",
                      detail = "These data are consistent with no difference as well as with a real one."),
     list(tone = "unknown", label = "No evidence measure",
@@ -1124,21 +1236,125 @@ result_verdict <- function(result) {
   )
 }
 
-# The reader came for one sentence. Set in body text among the other cards, it
-# reads as one paragraph of several, so it leads here, once, at a size that says
-# it is the answer. Everything below it is support.
+# The handful of numbers a reader would copy onto a slide. They are picked from
+# whatever the engine returned, in a fixed order: the estimate, its interval,
+# a standardized size, the second evidence check, and the rows behind it all.
+# An expert reads these and moves on, and a newcomer sees which numbers the
+# sentences underneath are about.
+key_numbers <- function(result) {
+  tiles <- list()
+  add <- function(label, value, note = NULL) {
+    tiles[[length(tiles) + 1L]] <<- list(label = label, value = value, note = note)
+  }
+  # Very large and very small values are given as bounds. A ratio of ten to
+  # the eighteenth is a sign of a category the model separates completely, and
+  # printing all its digits would suggest a precision it does not have.
+  number <- function(x, digits = 2) {
+    if (abs(x) >= 1e6) return(if (x > 0) "more than 1,000,000" else "less than -1,000,000")
+    if (abs(x) >= 1000) return(format(round(x), big.mark = ","))
+    if (x != 0 && abs(x) < 0.005 && digits <= 2) return(if (x > 0) "less than 0.01" else "more than -0.01")
+    fmt_num(x, digits)
+  }
+  # A model table begins with its intercept, which is rarely the number the
+  # reader came for, so models lead with the row the two written readings
+  # describe.
+  e <- if (!is.null(result$estimates) && nrow(result$estimates)) {
+    if ("Term" %in% names(result$estimates)) primary_model_row(result) %||% result$estimates[1, , drop = FALSE]
+    else result$estimates[1, , drop = FALSE]
+  } else NULL
+  ratio <- result$method %in% RATIO_METHODS
+  before <- length(tiles)
+  if (identical(ANALYSES[[result$method]]$kind, "machine_learning") && !is.null(result$fit) &&
+      all(c("Metric", "Value") %in% names(result$fit))) {
+    scores <- result$fit[!grepl("rows", result$fit$Metric, ignore.case = TRUE) & is.finite(result$fit$Value), , drop = FALSE]
+    for (i in seq_len(min(3L, nrow(scores)))) {
+      add(as.character(scores$Metric[i]), number(scores$Value[i], 3), "On the rows held back for testing")
+    }
+  } else if (!is.null(e)) {
+    column <- intersect(c("Estimate", "Correlation", "Proportion", "Omega_squared"), names(e))
+    if (length(column) && is.numeric(e[[column[1]]]) && is.finite(e[[column[1]]])) {
+      # Where the engine names the quantity itself, as with a kappa or a
+      # Cramer's V, that name is a better label than the word estimate.
+      named <- intersect(c("Coefficient", "Effect"), names(e))
+      named <- named[vapply(named, function(n) is.character(e[[n]]) || is.factor(e[[n]]), logical(1))]
+      label <- switch(column[1], Correlation = "Correlation", Proportion = "Proportion", Omega_squared = "Omega squared",
+                      if (length(named)) as.character(e[[named[1]]]) else if (ratio) sentence_case(ratio_noun(result$method)) else "Estimate")
+      what <- intersect(c("Contrast", "Term", "Category"), names(e))
+      note <- if (length(what)) as.character(e[[what[1]]]) else if ("Reading" %in% names(e)) paste(tools::toTitleCase(as.character(e$Reading)), "agreement") else NULL
+      if (identical(column[1], "Correlation")) note <- paste(e$Variable_1, "with", e$Variable_2)
+      if (identical(column[1], "Omega_squared")) note <- "Share of variation tied to the groups"
+      add(label, if (identical(column[1], "Proportion")) fmt_pct(e[[column[1]]]) else number(e[[column[1]]]), note)
+    }
+    if (all(c("Lower", "Upper") %in% names(e)) && is.finite(e$Lower) && is.finite(e$Upper)) {
+      shown <- if ("Proportion" %in% names(e)) c(fmt_pct(e$Lower), fmt_pct(e$Upper)) else c(number(e$Lower), number(e$Upper))
+      add(sprintf("%s%% interval", conf_percent(result$conf_level)), paste(shown, collapse = " to "),
+          "The range of values that fit these rows")
+    }
+    if (all(c("Effect", "Effect_name") %in% names(e)) && is.numeric(e$Effect) && is.finite(e$Effect)) {
+      add(as.character(e$Effect_name), number(e$Effect), "Size in standard deviation units")
+    }
+  }
+  # A test with no estimate beside it still has a statistic worth showing, so
+  # the card is never reduced to a row count for a method that tested a claim.
+  if (length(tiles) == before && !is.null(result$tests) && nrow(result$tests) &&
+      all(c("Test", "Statistic") %in% names(result$tests)) && is.finite(result$tests$Statistic[1])) {
+    t <- result$tests[1, , drop = FALSE]
+    add("Test statistic", number(t$Statistic), as.character(t$Test))
+  }
+  if (!is.null(result$evidence)) {
+    bf <- result$evidence$Value[1]
+    add("Bayes factor", if (bf >= 1000) "> 1,000" else if (bf < 0.001) "< 0.001" else number(bf, if (bf >= 10) 1 else 2),
+        sprintf("%s, for %s", tools::toTitleCase(result$evidence$Strength[1]), result$evidence$Favors[1]))
+  }
+  omitted <- result$n_omitted %||% 0L
+  add("Rows used", format(result$n_used, big.mark = ","),
+      if (omitted > 0) sprintf("%s left out for missing values", format(omitted, big.mark = ",")) else "None left out")
+  tiles
+}
+
+# A different mark for each verdict, so the reading does not rest on the color
+# of the chip alone.
+verdict_icon <- function(tone) {
+  switch(tone, clear = "check", tentative = "alert", uncertain = "help", null = "equal", "table")
+}
+
+# The verdict and the numbers behind it, in one glance. The sentence that
+# explains them is the first thing in the everyday reading directly below, so
+# it is not repeated here.
 answer_hero_ui <- function(result, accessible) {
   verdict <- result_verdict(result)
+  tiles <- key_numbers(result)
   div(
     class = paste("answer-hero", paste0("verdict-", verdict$tone)),
     div(class = "answer-hero-top",
         span(class = "verdict-chip",
-             span(class = "verdict-dot", `aria-hidden` = "true"),
+             span(class = "verdict-mark", `aria-hidden` = "true", icon_svg(verdict_icon(verdict$tone))),
              verdict$label),
         span(class = "answer-hero-method", ANALYSES[[result$method]]$name)),
-    p(class = "answer-hero-line", accessible$bottom_line),
-    p(class = "answer-hero-detail", verdict$detail)
+    p(class = "answer-hero-detail", verdict$detail),
+    tags$dl(class = "key-numbers", lapply(tiles, function(tile) {
+      div(class = "key-number",
+          tags$dt(tile$label),
+          tags$dd(span(class = "key-number-value", tile$value),
+                  if (!is.null(tile$note)) span(class = "key-number-note", tile$note)))
+    }))
   )
+}
+
+# The script as text on the page. Someone who works in R wants to read the
+# calls before deciding whether to trust the result, and should not have to
+# download a file to do it.
+code_panel_ui <- function(result) {
+  lines <- reproduction_script(result)
+  div(class = "code-panel",
+      div(class = "code-panel-head",
+          div(h3("The R code behind this result"),
+              p("These are the calls Daybreak ran, written so they work on their own. Point the first line at your data file.")),
+          div(class = "code-panel-actions",
+              tags$button(type = "button", class = "btn copy-code-button", `data-copy-target` = "result-code",
+                          icon_svg("copy"), span(class = "copy-code-label", "Copy")),
+              downloadButton("download_code_inline", "Download .R", class = "download-btn compact-download"))),
+      tags$pre(id = "result-code", class = "code-block", tabindex = "0", tags$code(paste(lines, collapse = "\n"))))
 }
 
 result_tabs_ui <- function(result, narrative, accessible, stale = FALSE) {
@@ -1146,11 +1362,6 @@ result_tabs_ui <- function(result, narrative, accessible, stale = FALSE) {
   div(class = "result-stack", `aria-live` = "polite",
       if (isTRUE(stale)) stale_result_banner(),
       answer_hero_ui(result, accessible),
-      div(class = "result-overview-bar",
-          div(class = "result-overview-badges",
-              span(sprintf("%s rows used", format(result$n_used, big.mark = ","))),
-              if (omitted > 0) span(class = "has-omissions", sprintf("%s omitted", format(omitted, big.mark = ","))) else span("No required rows omitted"),
-              if (is.finite(result$conf_level %||% NA)) span(sprintf("%s%% intervals", conf_percent(result$conf_level))))),
       div(class = "result-reading-sequence",
           accessible_explanation_ui(accessible),
           narrative_ui(narrative),
@@ -1171,6 +1382,9 @@ result_tabs_ui <- function(result, narrative, accessible, stale = FALSE) {
           tags$button(id = "result-tab-data", class = "result-tab", type = "button", role = "tab",
                       `aria-selected` = "false", `aria-controls` = "result-panel-data", tabindex = "-1",
                       `data-tab` = "data", "Data used"),
+          tags$button(id = "result-tab-code", class = "result-tab", type = "button", role = "tab",
+                      `aria-selected` = "false", `aria-controls` = "result-panel-code", tabindex = "-1",
+                      `data-tab` = "code", "R code"),
           tags$button(id = "result-tab-export", class = "result-tab", type = "button", role = "tab",
                       `aria-selected` = "false", `aria-controls` = "result-panel-export", tabindex = "-1",
                       `data-tab` = "export", "Download")),
@@ -1182,12 +1396,14 @@ result_tabs_ui <- function(result, narrative, accessible, stale = FALSE) {
                                    "The reading above and the checks tab carry everything this method produces.",
                                    "table")
                   },
-                  result_table_section_ui("Estimates", result$estimates),
+                  result_table_section_ui("Estimates", result$estimates, open = TRUE),
                   result_table_section_ui("Tests", result$tests),
-                  result_table_section_ui("Model fit", result$fit)),
+                  result_table_section_ui("Model fit", result$fit),
+                  if (!is.null(result$evidence)) result_table_section_ui("Second evidence check", result$evidence)),
               local_rewrite_ui())),
       div(id = "result-panel-checks", class = "result-panel", role = "tabpanel", `aria-labelledby` = "result-tab-checks", `aria-hidden` = "true", check_cards_ui(result$checks)),
       div(id = "result-panel-data", class = "result-panel", role = "tabpanel", `aria-labelledby` = "result-tab-data", `aria-hidden` = "true", uiOutput("data_used_panel")),
+      div(id = "result-panel-code", class = "result-panel", role = "tabpanel", `aria-labelledby` = "result-tab-code", `aria-hidden` = "true", code_panel_ui(result)),
       div(id = "result-panel-export", class = "result-panel", role = "tabpanel", `aria-labelledby` = "result-tab-export", `aria-hidden` = "true", export_panel_ui())
   )
 }
@@ -1216,45 +1432,138 @@ data_preview_ui <- function(data, data_name, limit = 500L) {
   )
 }
 
+# The walkthrough -------------------------------------------------------------
+#
+# Six slides, each making one point, in the order a new reader meets the app:
+# what it is, what to give it, how to pick a method, how to read the answer,
+# how to check and keep it, and what stays private. It opens once on a first
+# visit and can be reopened from Help. The pictures reuse the small method
+# drawings so the walkthrough looks like the thing it describes.
+tour_slides <- function() {
+  list(
+    list(title = "Welcome to Daybreak",
+         text = "Ask a question of your data and get the answer twice: once in everyday words, once in the language of a methods section. Both come from the same numbers, and both come with what the result cannot tell you.",
+         art = "descriptives"),
+    list(title = "Start with a file, or borrow one of ours",
+         text = sprintf("Open a spreadsheet, a CSV, or a file from SPSS, Stata, SAS, or R. If you would like to look around first, %d built-in examples each open with a method already chosen and the columns filled in.", length(SAMPLES)),
+         art = "missingness"),
+    list(title = "Choose by situation, not by name",
+         text = sprintf("You do not need to know what a test is called. Open Methods, pick Help me choose, and find the line that sounds like your situation. All %d methods are also there to browse or search.", length(ANALYSES)),
+         art = "classification_tree"),
+    list(title = "Read the answer two ways",
+         text = "A short verdict and the key numbers come first. Under them, the everyday explanation says what the data shows and how sure it is, and the statistical description gives the estimate, the interval, and a second evidence check.",
+         art = "equivalence"),
+    list(title = "Check it, then take it with you",
+         text = "Every result lists the checks it passed and the ones it did not. The R code tab shows the exact calls, and Download gives you the figure, a report, the tables, and a script that reproduces the numbers without Daybreak.",
+         art = "linear_regression"),
+    list(title = "Your data stays on this computer",
+         text = "Nothing is uploaded and there is no account. A small language model can reword a finished explanation if you set one up, and it also runs here. It never sees your rows, and a rewrite that changes any number is thrown away.",
+         art = "nearest_neighbors")
+  )
+}
+
+tour_ui <- function() {
+  slides <- tour_slides()
+  div(class = "tour", `data-tour-count` = length(slides),
+      lapply(seq_along(slides), function(i) {
+        slide <- slides[[i]]
+        div(class = paste("tour-slide", if (i == 1L) "is-active"), `data-tour-slide` = i,
+            `aria-hidden` = tolower(as.character(i != 1L)),
+            div(class = "tour-art", method_visual_ui(list(id = slide$art))),
+            div(class = "tour-copy",
+                p(class = "tour-count", sprintf("%d of %d", i, length(slides))),
+                h3(class = "tour-title", slide$title),
+                p(class = "tour-text", slide$text)))
+      }),
+      div(class = "tour-foot",
+          div(class = "tour-dots", `aria-hidden` = "true",
+              lapply(seq_along(slides), function(i) span(class = paste("tour-dot", if (i == 1L) "is-active"), `data-tour-dot` = i))),
+          div(class = "tour-actions",
+              tags$button(type = "button", class = "btn tour-button tour-back", `data-tour-step` = "-1", disabled = NA, "Back"),
+              tags$button(type = "button", class = "btn tour-button tour-next is-primary", `data-tour-step` = "1", "Next"),
+              tags$button(type = "button", class = "btn tour-button tour-done is-primary", `data-tour-done` = "true", hidden = NA, "Get started"))))
+}
+
+# Plain definitions of the words the result page uses. Each is one or two
+# sentences, written so that the term can be understood without the others.
+GLOSSARY <- list(
+  c("Outcome", "The column you want to explain or compare. In a study of test scores by teaching method, the score is the outcome."),
+  c("Predictor", "A column used to explain the outcome. Teaching method, age, and hours studied could all be predictors of a score."),
+  c("Estimate", "The single best number the data gives for something you cannot observe directly, such as the true difference between two groups."),
+  c("Confidence interval", "A range around the estimate. Values inside it fit the data reasonably well, and values outside it fit poorly. A narrow interval means the data pins the answer down, and a wide one means it does not."),
+  c("Effect size", "How large a difference or relationship is, on a scale that does not depend on the units. It answers how much, where a test only answers whether."),
+  c("p-value", "How surprising the data would be if there were truly nothing going on. It is not the chance that the finding is wrong, and a small one does not mean the effect is large."),
+  c("Bayes factor", "How much better one account predicts the data than another, as a ratio. A value of 10 for a difference means the rows are ten times more expected if there is a difference than if there is none. Unlike a p-value, it can also favor there being no effect."),
+  c("Standard error", "How much an estimate would bounce around from one sample to the next. Smaller is steadier."),
+  c("Residual", "What is left of an outcome after a model has made its prediction: the actual value minus the predicted one."),
+  c("Holdout rows", "Rows set aside before a prediction model is built and used only to test it afterwards, so the score reflects cases the model has not seen."),
+  c("Heterogeneity", "In a meta-analysis, the extent to which studies disagree by more than chance alone would produce.")
+)
+
 # Help text stays in the app instead of pointing at a website, because the
 # whole application is built to run with no network at all.
 help_ui <- function() {
+  repo <- "https://github.com/drabhikroy/daybreak"
   div(
     class = "help-shell",
     div(
       class = "help-lead",
       div(class = "eyebrow", icon_svg("sun"), "A short guide"),
       h2("Use Daybreak without memorizing statistical menus"),
-      p("The app is organized around the question you want to answer. It keeps an everyday explanation, exact statistical wording, checks, data rows, and downloads together.")
+      p("The app is organized around the question you want to answer. It keeps an everyday explanation, exact statistical wording, checks, data rows, and downloads together."),
+      tags$a(href = "#tour-panel", class = "help-tour-button btn", role = "button", icon_svg("play"), "Take the two-minute walkthrough")
     ),
     tags$section(
       class = "help-section", h3("Start here"),
       div(class = "help-step-grid",
           div(class = "help-step", span("1"), h4("Choose data"), p("Open a built-in example or upload your own file.")),
-          div(class = "help-step", span("2"), h4("Choose a method"), p("Use the sidebar list or open Methods to browse by research question.")),
+          div(class = "help-step", span("2"), h4("Choose a method"), p("Use the sidebar list, or open Methods and describe your situation.")),
           div(class = "help-step", span("3"), h4("Assign columns"), p("Use the short descriptions under each field to place columns in the correct roles.")),
-          div(class = "help-step", span("4"), h4("Run and read"), p("Read the everyday answer, the statistical description, and the figure in that order. Open more detail only when you need it.")))
+          div(class = "help-step", span("4"), h4("Run and read"), p("Read the verdict, the everyday answer, the statistical description, and the figure in that order. Open more detail only when you need it.")))
     ),
     div(
       class = "help-two-column",
       tags$section(class = "help-section", h3("Choosing a method"),
-                   p("The sidebar lists every method directly. The Methods directory separates statistics from machine learning, then groups each area by the kind of question it answers."),
+                   p("Open Methods in the header. Help me choose lists situations in plain words and names the methods that fit each one. Statistics and Machine learning hold the full catalog grouped by question, and the search box looks across all of it."),
                    p("After data loads, choices that do not appear to match the available column types become dimmer and show a short reason. They remain selectable because a different column assignment or a prepared working copy may still make them appropriate."),
                    tags$ul(
                      tags$li(strong("Describe"), ": summarize values, categories, or missing data."),
-                     tags$li(strong("Compare"), ": examine differences across groups or repeated measurements."),
+                     tags$li(strong("Compare"), ": examine differences across groups or repeated measurements, or show that two groups are close enough to count as the same."),
                      tags$li(strong("Relationships and statistical models"), ": study associations or adjusted estimates and quantify uncertainty."),
-                     tags$li(strong("Advanced statistical groups"), ": work with several outcomes, latent variables, clustered data, survival, or time series."),
+                     tags$li(strong("Advanced statistical groups"), ": work with several outcomes, latent variables, rater agreement, clustered data, survival, time series, or several studies at once."),
                      tags$li(strong("Machine learning"), ": predict a category or number, find groups, or reduce dimensions. Predictive results use held-out rows and do not support causal claims."))),
       tags$section(class = "help-section", h3("Reading a result"),
-                   p("Daybreak presents each result in one reading order. The everyday explanation comes first. The statistical description follows immediately, then the figure and optional detail."),
+                   p("Daybreak presents each result in one reading order, so that once you have read one you know where to look in the next."),
                    tags$ul(
+                     tags$li(strong("Verdict and key numbers"), ": a short reading of the evidence and the few figures you would quote."),
                      tags$li(strong("Everyday explanation"), ": what the data says, how to read the figure, whether random variation could explain the pattern, and what the result cannot answer."),
-                     tags$li(strong("Statistical description"), ": the formal account with statistical terms, estimates, uncertainty, checks, and limits."),
+                     tags$li(strong("Statistical description"), ": the formal account with estimates, intervals, the second evidence check, and limits."),
                      tags$li(strong("Pattern in the data"), ": the figure that shows the result described above it."),
                      tags$li(strong("Exact values"), ": estimates, intervals, tests, model fit, and the optional local rewrite."),
                      tags$li(strong("Checks"), ": conditions the app can examine from the selected columns."),
-                     tags$li(strong("Data used"), ": column profile and the first rows included in the analysis.")))
+                     tags$li(strong("Data used"), ": column profile and the first rows included in the analysis."),
+                     tags$li(strong("R code"), ": the calls behind the result, to read, copy, or download.")))
+    ),
+    tags$section(
+      class = "help-section", h3("What the verdict means"),
+      p("The verdict weighs two checks where both are available. The interval says which sizes of effect fit the data. The Bayes factor says which account predicts the data better, a real effect or none. No single number is treated as the answer."),
+      div(class = "verdict-legend",
+          div(class = "verdict-legend-item verdict-clear", span(class = "verdict-chip", span(class = "verdict-mark", icon_svg("check")), "Clear signal"),
+              p("The interval excludes no effect, and the second check, when there is one, supports it.")),
+          div(class = "verdict-legend-item verdict-tentative", span(class = "verdict-chip", span(class = "verdict-mark", icon_svg("alert")), "Tentative signal"),
+              p("The interval excludes no effect, but the second check finds only thin support. Treat it as a lead to follow up.")),
+          div(class = "verdict-legend-item verdict-uncertain", span(class = "verdict-chip", span(class = "verdict-mark", icon_svg("help")), "Not clear"),
+              p("The data fit an effect and no effect about equally. This is not evidence that nothing is there.")),
+          div(class = "verdict-legend-item verdict-null", span(class = "verdict-chip", span(class = "verdict-mark", icon_svg("equal")), "Points to no effect"),
+              p("The interval includes no effect, and the second check favors that account by 3 to 1 or more.")),
+          div(class = "verdict-legend-item verdict-summary", span(class = "verdict-chip", span(class = "verdict-mark", icon_svg("table")), "Summary or holdout score"),
+              p("The method describes the file or scores a prediction. There is no claim to judge.")))
+    ),
+    tags$section(
+      class = "help-section", h3("Words you will meet"),
+      div(class = "glossary", lapply(GLOSSARY, function(entry) {
+        tags$details(class = "glossary-term", tags$summary(entry[1]), p(entry[2]))
+      }))
     ),
     div(
       class = "help-three-column",
@@ -1269,22 +1578,46 @@ help_ui <- function() {
                    )),
                    p("Blank cells or NA may mark missing values. Keep dates consistent, such as 2026-08-01, and use the same spelling for each category. Open Data formats for accepted file types or the missing-data workspace after loading a file.")),
       tags$section(class = "help-section", h3("Local language models"),
-                   p("The everyday explanation works without a language model. The optional Ollama connection can restate that completed text on your Mac."),
-                   p("Open Local models in the header for installation steps. Daybreak does not send raw rows to a model, and it rejects a rewrite that changes any number.")),
+                   p("The everyday explanation works without a language model. If you want a second wording, open Local models in the header and follow the three steps: choose how to run Ollama, get it running, and pick a model."),
+                   p("Daybreak can use an Ollama you installed or keep its own copy in a folder it can remove again. Each model is listed with what it is good at and what the catch is. Raw rows are never sent to a model, and a rewrite that changes any number is rejected.")),
       tags$section(class = "help-section", h3("If an analysis stops"),
                    p("Read the message at the top of the result area. It usually names a missing column choice, an unsuitable variable type, too few complete rows, or an R package that must be installed."),
                    p("Changing a method clears the prior result so an old table is never presented as the result of a new analysis."))
     ),
-    tags$section(
-      class = "help-section",
-      h3("Save your place"),
-      p("Open Session in the header and download a .daybreak.rds file. It keeps the active data, method, column roles, settings, completed result, explanations, and display colors."),
-      p("To continue later, open Session, choose that file, and select Open this session. The data is stored inside the file, so keep it wherever you would safely keep the source dataset.")
+    div(
+      class = "help-two-column",
+      tags$section(
+        class = "help-section",
+        h3("Keyboard"),
+        tags$ul(class = "shortcut-list",
+          tags$li(tags$kbd("Command"), " or ", tags$kbd("Control"), " with ", tags$kbd("Return"), span("Run the analysis from anywhere on the page.")),
+          tags$li(tags$kbd("Escape"), span("Close the open panel.")),
+          tags$li(tags$kbd("Left"), " and ", tags$kbd("Right"), span("Move between the result tabs when one has focus.")),
+          tags$li(tags$kbd("Tab"), span("Move through every control in order. The first stop on the page skips straight to the results.")))
+      ),
+      tags$section(
+        class = "help-section",
+        h3("Save your place"),
+        p("Open Session in the header and download a .daybreak.rds file. It keeps the active data, method, column roles, settings, completed result, explanations, and display colors."),
+        p("To continue later, open Session, choose that file, and select Open this session. The data is stored inside the file, so keep it wherever you would safely keep the source dataset.")
+      )
     ),
     tags$section(
       class = "help-section help-boundary",
       h3("What the checks do not decide"),
       p("Automated checks cannot judge whether a research design supports causal claims, whether a measure is substantively valid, whether a sample represents a population, or whether a model answers the intended research question. Those decisions still belong to the analyst.")
+    ),
+    tags$section(
+      class = "help-section help-about",
+      h3("About Daybreak"),
+      tags$dl(class = "about-list",
+        div(tags$dt("Version"), tags$dd(DAYBREAK_VERSION)),
+        div(tags$dt("Newest release"), tags$dd(tags$a(href = paste0(repo, "/releases/latest"), target = "_blank", rel = "noopener", "github.com/drabhikroy/daybreak/releases/latest"))),
+        div(tags$dt("Source and issues"), tags$dd(tags$a(href = repo, target = "_blank", rel = "noopener", "github.com/drabhikroy/daybreak"))),
+        div(tags$dt("License"), tags$dd(tags$a(href = "https://polyformproject.org/licenses/noncommercial/1.0.0", target = "_blank", rel = "noopener", "PolyForm Noncommercial License 1.0.0"),
+                                       tags$br(), "Free for personal use, study, teaching, research, and nonprofit and government work. Commercial use needs a separate license.")),
+        div(tags$dt("Copyright"), tags$dd("Copyright 2026 Abhik Roy.")),
+        div(tags$dt("Built with"), tags$dd("R and Shiny. Every statistic comes from R code you can read in the R code tab of any result.")))
     )
   )
 }

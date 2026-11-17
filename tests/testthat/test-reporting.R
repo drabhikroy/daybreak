@@ -53,7 +53,7 @@ testthat::test_that("everyday explanation uses concrete novice sections", {
 })
 
 testthat::test_that("the iris ANOVA answer names its data and observed groups", {
-  result <- analyse_one_way_anova(
+  result <- analyze_one_way_anova(
     iris,
     list(outcome = "Sepal.Length", group = "Species"),
     list(conf_level = 0.95)

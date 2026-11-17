@@ -20,7 +20,7 @@ testthat::test_that("the source frame is not changed during preparation", {
 testthat::test_that("classification trees report held-out accuracy", {
   testthat::skip_if_not_installed("rpart")
   d <- datasets::iris
-  got <- analyse_classification_tree(
+  got <- analyze_classification_tree(
     d,
     list(outcome = "Species", predictors = c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width")),
     list(random_seed = 11, train_fraction = 0.8, tree_cp = 0.01, tree_minsplit = 10)
@@ -34,12 +34,12 @@ testthat::test_that("classification trees report held-out accuracy", {
 testthat::test_that("tree regression and nearest neighbors return one value per holdout row", {
   testthat::skip_if_not_installed("rpart")
   testthat::skip_if_not_installed("class")
-  regression <- analyse_regression_tree(
+  regression <- analyze_regression_tree(
     datasets::iris,
     list(outcome = "Sepal.Length", predictors = c("Sepal.Width", "Petal.Length", "Petal.Width")),
     list(random_seed = 12, train_fraction = 0.8, tree_cp = 0.01, tree_minsplit = 10)
   )
-  neighbors <- analyse_nearest_neighbors(
+  neighbors <- analyze_nearest_neighbors(
     datasets::iris,
     list(outcome = "Species", predictors = c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width")),
     list(random_seed = 12, train_fraction = 0.8, neighbors = 5)
@@ -50,12 +50,12 @@ testthat::test_that("tree regression and nearest neighbors return one value per 
 
 testthat::test_that("random forests return bounded or finite holdout scores", {
   testthat::skip_if_not_installed("ranger")
-  classification <- analyse_random_forest_classification(
+  classification <- analyze_random_forest_classification(
     datasets::iris,
     list(outcome = "Species", predictors = c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width")),
     list(random_seed = 13, train_fraction = 0.8, forest_trees = 100)
   )
-  regression <- analyse_random_forest_regression(
+  regression <- analyze_random_forest_regression(
     datasets::iris,
     list(outcome = "Sepal.Length", predictors = c("Sepal.Width", "Petal.Length", "Petal.Width")),
     list(random_seed = 13, train_fraction = 0.8, forest_trees = 100)
@@ -69,12 +69,12 @@ testthat::test_that("random forests return bounded or finite holdout scores", {
 testthat::test_that("elastic-net models use training cross-validation and held-out rows", {
   testthat::skip_if_not_installed("glmnet")
   d <- datasets::iris
-  classification <- analyse_elastic_net_classification(
+  classification <- analyze_elastic_net_classification(
     d,
     list(outcome = "Species", predictors = c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width")),
     list(random_seed = 11, train_fraction = 0.8, elastic_alpha = 0.5, cv_folds = 5)
   )
-  regression <- analyse_elastic_net_regression(
+  regression <- analyze_elastic_net_regression(
     d,
     list(outcome = "Sepal.Length", predictors = c("Sepal.Width", "Petal.Length", "Petal.Width")),
     list(random_seed = 11, train_fraction = 0.8, elastic_alpha = 0.5, cv_folds = 5)
@@ -88,7 +88,7 @@ testthat::test_that("elastic-net models use training cross-validation and held-o
 
 testthat::test_that("naive Bayes reports held-out categories", {
   testthat::skip_if_not_installed("e1071")
-  got <- analyse_naive_bayes(
+  got <- analyze_naive_bayes(
     datasets::iris,
     list(outcome = "Species", predictors = c("Sepal.Length", "Petal.Length")),
     list(random_seed = 11, train_fraction = 0.8, naive_laplace = 1)
@@ -101,8 +101,8 @@ testthat::test_that("naive Bayes reports held-out categories", {
 testthat::test_that("density models preserve noise as an explicit result", {
   testthat::skip_if_not_installed("dbscan")
   roles <- list(variables = c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width"))
-  db <- analyse_dbscan_clustering(datasets::iris, roles, list(dbscan_eps = 0.7, density_min_points = 5))
-  hdb <- analyse_hdbscan_clustering(datasets::iris, roles, list(density_min_points = 5))
+  db <- analyze_dbscan_clustering(datasets::iris, roles, list(dbscan_eps = 0.7, density_min_points = 5))
+  hdb <- analyze_hdbscan_clustering(datasets::iris, roles, list(density_min_points = 5))
 
   testthat::expect_equal(sum(db$estimates$Rows), nrow(datasets::iris))
   testthat::expect_equal(sum(hdb$estimates$Rows), nrow(datasets::iris))
@@ -113,7 +113,7 @@ testthat::test_that("density models preserve noise as an explicit result", {
 testthat::test_that("prediction settings reject invalid values before fitting", {
   testthat::expect_error(numeric_holdout(30, 0.2, 2), "between 0.50 and 0.95", fixed = TRUE)
   testthat::expect_error(
-    analyse_nearest_neighbors(
+    analyze_nearest_neighbors(
       datasets::iris,
       list(outcome = "Species", predictors = c("Sepal.Length", "Sepal.Width")),
       list(train_fraction = 0.8, random_seed = 2, neighbors = 0)
@@ -122,7 +122,7 @@ testthat::test_that("prediction settings reject invalid values before fitting", 
     fixed = TRUE
   )
   testthat::expect_error(
-    analyse_dbscan_clustering(
+    analyze_dbscan_clustering(
       datasets::iris,
       list(variables = c("Sepal.Length", "Sepal.Width")),
       list(dbscan_eps = -1, density_min_points = 5)

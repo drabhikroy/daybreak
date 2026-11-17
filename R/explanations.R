@@ -395,6 +395,58 @@ accessible_core <- function(result) {
     ))
   }
 
+  if (id == "equivalence") {
+    e <- estimates[1, ]
+    first <- quoted_name(result$extras$levels[1]); second <- quoted_name(result$extras$levels[2])
+    outcome <- quoted_name(result$extras$outcome)
+    margin <- plain_number(e$Margin_high)
+    state <- equivalence_state(result)
+    answer <- switch(state,
+      equivalent = sprintf("Even at the edges of what these rows allow, the gap stays smaller than %s. By the margin set for this analysis, the two groups are close enough to treat as the same.", margin),
+      apart = sprintf("Everything these rows allow puts the gap beyond %s. By the margin set for this analysis, the two groups are not close enough to treat as the same.", margin),
+      sprintf("The rows allow a gap smaller than %s, and they also allow a larger one. This result cannot say whether the groups are close enough to treat as the same.", margin))
+    return(list(
+      bottom_line = sprintf("The averages of %s for %s and for %s differ by about %s. %s", outcome, first, second, plain_number(abs(e$Estimate)), answer),
+      picture = "The shaded band marks every difference small enough to count as the same. The bar shows the range of differences that fit these rows. A bar that sits wholly inside the band means the groups are close enough.",
+      certainty = if (state == "equivalent") {
+        "Random samples do not come out exactly alike, so the real gap could be a little larger or smaller than the one found here. The whole plausible range still fits inside the band."
+      } else {
+        "Random samples do not come out exactly alike, so the real gap could be larger or smaller than the one found here. Part of the plausible range falls outside the band, and more rows would narrow it."
+      },
+      boundary = if (isTRUE(result$extras$margin_given)) {
+        "The answer depends on the margin. Someone who would accept a larger or smaller gap as unimportant could reach a different conclusion from the same rows."
+      } else {
+        "No margin was entered, so Daybreak used a general-purpose one. The answer depends on that margin, and only someone who knows the subject can say what gap is small enough not to matter."
+      }
+    ))
+  }
+
+  if (id == "agreement") {
+    e <- estimates[1, ]
+    first <- quoted_name(result$extras$rater_1); second <- quoted_name(result$extras$rater_2)
+    return(list(
+      bottom_line = sprintf("%s and %s gave the same category to about %s out of every 100 cases. About %s out of 100 would match by luck alone, given how often each one used each category. After setting that luck aside, the agreement is %s.",
+                            first, second, plain_number(e$Observed_agreement * 100, 0), plain_number(e$Chance_agreement * 100, 0), e$Reading),
+      picture = sprintf("Each square counts the cases that %s placed in the row category and %s placed in the column category. The outlined squares running corner to corner are the matches. Cases far from that line are the larger disagreements.", first, second),
+      certainty = "A different set of cases would give a somewhat different score. The interval in the exact table shows the range of scores that fit these ratings.",
+      boundary = "Agreement is not accuracy. Two raters can agree with each other and both be wrong, and this score cannot tell which rater is right when they differ."
+    ))
+  }
+
+  if (id == "meta_analysis") {
+    e <- estimates[1, ]
+    k <- result$extras$k
+    direction <- if (e$Estimate > 0) "above" else "below"
+    spread <- if (result$extras$i2 >= 50) "The studies disagree with each other by more than chance would explain, so the average hides real differences between them." else "The studies broadly agree with each other."
+    return(list(
+      bottom_line = sprintf("Taken together, the %s studies give an average effect of %s on the scale of %s, which is %s zero. %s",
+                            k, plain_number(e$Estimate), quoted_name(result$extras$effect), direction, spread),
+      picture = "Each square is one study, and a larger square means that study counts for more. The line through it shows how uncertain that study is. The diamond at the bottom is the combined answer, and the wide pale bar shows where a new study would be likely to land.",
+      certainty = trimws(paste(plain_certainty(result), "The pale bar is usually much wider than the diamond, because a single new study can differ from the average.")),
+      boundary = "Combining studies does not fix their flaws. If the studies share a weakness, or if studies with unwelcome results were never published, the combined answer inherits the problem."
+    ))
+  }
+
   if (id %in% c("one_proportion", "two_proportions")) {
     value <- if (id == "one_proportion") first_finite(first_value(estimates, "Proportion")) else first_finite(first_value(estimates, "Estimate"))
     signal <- if (id == "one_proportion") {
@@ -675,7 +727,7 @@ build_accessible_explanation <- function(result) {
     context = selected_context(result),
     bottom_line = body$bottom_line,
     picture = body$picture,
-    certainty = body$certainty,
+    certainty = trimws(paste(body$certainty, evidence_sentence_plain(result))),
     boundary = body$boundary,
     data_note = plain_data_note(result)
   )

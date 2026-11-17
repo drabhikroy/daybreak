@@ -55,6 +55,10 @@ if (!is.null(result$tests)) knitr::kable(md_frame(result$tests), caption = "Hypo
 if (!is.null(result$fit)) knitr::kable(md_frame(result$fit), caption = "Model fit")
 ```
 
+```{r evidence}
+if (!is.null(result$evidence)) knitr::kable(md_frame(result$evidence), caption = "Second evidence check")
+```
+
 ## Checks
 
 ```{r checks}

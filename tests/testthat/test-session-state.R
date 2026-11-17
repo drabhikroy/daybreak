@@ -1,7 +1,7 @@
 testthat::test_that("a Daybreak session keeps data, choices, and a completed result", {
   # Reading a session file is refused on R releases affected by CVE-2024-27322.
   testthat::skip_if(getRversion() < "4.4.0", "session files need R 4.4.0 or later")
-  result <- analyse_one_way_anova(
+  result <- analyze_one_way_anova(
     iris,
     list(outcome = "Sepal.Length", group = "Species"),
     list(conf_level = 0.95)

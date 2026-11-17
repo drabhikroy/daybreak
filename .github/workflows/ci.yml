@@ -30,3 +30,12 @@ jobs:
 
       - name: Run the suite
         run: Rscript -e 'source("tests/run_tests.R")'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the browser script
+        run: |
+          npm install --no-save jsdom
+          node tests/browser-smoke.js

@@ -27,8 +27,15 @@ jobs:
             exit 1
           fi
 
-      - name: Extract the changelog section for this version
+      # A release that has a written announcement uses it as the page body. A
+      # release without one uses its changelog section.
+      - name: Write the release notes
         run: |
+          announcement="docs/release-notes/${{ steps.version.outputs.number }}.md"
+          if [ -s "$announcement" ]; then
+            cp "$announcement" release-notes.md
+            exit 0
+          fi
           awk -v want="## ${{ steps.version.outputs.number }}" '
             index($0, want) == 1 { found = 1; next }
             found && /^## / { exit }

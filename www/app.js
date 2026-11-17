@@ -164,6 +164,10 @@
     if (panel) {
       const close = panel.querySelector(".static-dialog-close");
       if (close) window.setTimeout(function () { close.focus(); }, 0);
+      // Shiny does not draw an output it believes is hidden, and it only
+      // looks again when told that something was shown. Without this, a panel
+      // opened after the page loaded would stay empty.
+      if (window.jQuery) window.jQuery(panel).trigger("shown");
     } else if (wasOpen && dialogReturnFocus && document.contains(dialogReturnFocus)) {
       dialogReturnFocus.focus();
       dialogReturnFocus = null;
@@ -205,6 +209,35 @@
       panel.classList.toggle("active", active);
       panel.setAttribute("aria-hidden", active ? "false" : "true");
     });
+  }
+
+  // Searching looks across both lists at once. While a query is present the
+  // tab switch is set aside and every matching card is shown under its family
+  // heading, and clearing the box puts the chosen tab back as it was.
+  function filterMethods(query) {
+    const shell = document.querySelector(".method-picker-shell");
+    if (!shell) return;
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const searching = words.length > 0;
+    shell.classList.toggle("is-searching", searching);
+    let shown = 0;
+    shell.querySelectorAll(".method-name-choice").forEach(function (card) {
+      const text = card.getAttribute("data-search") || "";
+      const match = !searching || words.every(function (word) { return text.indexOf(word) >= 0; });
+      card.hidden = !match;
+      if (match) shown += 1;
+    });
+    shell.querySelectorAll(".method-family-section").forEach(function (section) {
+      section.hidden = searching && !section.querySelector(".method-name-choice:not([hidden])");
+    });
+    const status = document.getElementById("method-search-status");
+    if (status) {
+      status.textContent = !searching
+        ? ""
+        : shown === 0
+          ? "No method matches that. Try a plainer word, such as groups, predict, or time."
+          : shown + (shown === 1 ? " method matches." : " methods match.");
+    }
   }
 
   function showResultTab(name, button) {
@@ -251,15 +284,21 @@
         option.title = possible ? "" : item.reason || "The active columns may not fit this method.";
       }
 
-      const card = document.querySelector('[data-modal-method="' + item.id + '"]');
-      if (card) {
+      // A method can appear as a card and again as a pick in the guide, and
+      // both have to dim together or the two views would disagree.
+      document.querySelectorAll('[data-modal-method="' + item.id + '"]').forEach(function (card) {
         card.classList.toggle("is-unlikely", !possible);
         if (possible) card.removeAttribute("title");
         else card.setAttribute("title", item.reason || "The active columns may not fit this method.");
         const note = card.querySelector(".method-data-fit");
         if (note) note.textContent = possible ? "" : "Check column types";
-      }
+      });
     });
+  }
+
+  function clickRun() {
+    const run = document.getElementById("run_analysis");
+    if (run && !run.disabled) run.click();
   }
 
   function toggleTheme() {
@@ -279,10 +318,14 @@
     const palette = readSetting("daybreak-palette", "standard");
     setTheme(theme);
     setPalette(palette);
+    offerTour();
     syncStaticDialog();
 
+    // Shiny refuses a handler that does not declare exactly one argument, and
+    // the refusal is an exception that would stop every registration after it.
+    // Each handler below therefore names its message even when it ignores it.
     if (window.Shiny && Shiny.addCustomMessageHandler && !window.__daybreakScrollHandler) {
-      Shiny.addCustomMessageHandler("scroll-main", function () {
+      Shiny.addCustomMessageHandler("scroll-main", function (message) {
         const main = document.getElementById("main-content");
         if (main) {
           main.scrollIntoView({
@@ -302,19 +345,26 @@
         setTheme(message && message.theme ? message.theme : "dark");
         setPalette(message && message.palette ? message.palette : "standard");
       });
-      Shiny.addCustomMessageHandler("close-static-dialog", function () {
+      Shiny.addCustomMessageHandler("close-static-dialog", function (message) {
         closeStaticDialog();
       });
-      Shiny.addCustomMessageHandler("click-run", function () {
-        const run = document.getElementById("run_analysis");
-        if (run) run.click();
+      Shiny.addCustomMessageHandler("click-run", function (message) {
+        clickRun();
       });
       window.__daybreakScrollHandler = true;
     }
 
     if (window.jQuery && !window.__daybreakConnectionHandlers) {
+      // The theme and palette are read from the browser before Shiny can
+      // receive anything, so the first report of them is lost. They are sent
+      // again once the connection is up, and the figures follow the page.
+      // Shiny announces its connection through jQuery, which a plain event
+      // listener never hears, so this has to be registered the jQuery way.
       window.jQuery(document).on("shiny:connected.daybreak", function () {
         document.body.classList.remove("session-disconnected");
+        send("theme_mode", document.body.classList.contains("light-mode") ? "light" : "dark");
+        const palette = paletteClasses.filter(function (name) { return document.body.classList.contains(name); })[0];
+        send("color_palette", (palette || "palette-standard").replace("palette-", ""));
       });
       window.jQuery(document).on("shiny:disconnected.daybreak", function () {
         document.body.classList.add("session-disconnected");
@@ -377,6 +427,90 @@
     }
   });
 
+  // The walkthrough ---------------------------------------------------------
+  //
+  // One slide is shown at a time, and the buttons, the dots, and the arrow
+  // keys all move through the same function so they can never disagree about
+  // which slide is showing.
+  let tourAt = 1;
+
+  function showTourSlide(number) {
+    const tour = document.querySelector(".tour");
+    if (!tour) return;
+    const count = parseInt(tour.getAttribute("data-tour-count"), 10) || 1;
+    tourAt = Math.min(Math.max(number, 1), count);
+    tour.querySelectorAll("[data-tour-slide]").forEach(function (slide) {
+      const active = parseInt(slide.getAttribute("data-tour-slide"), 10) === tourAt;
+      slide.classList.toggle("is-active", active);
+      slide.setAttribute("aria-hidden", active ? "false" : "true");
+    });
+    tour.querySelectorAll("[data-tour-dot]").forEach(function (dot) {
+      dot.classList.toggle("is-active", parseInt(dot.getAttribute("data-tour-dot"), 10) === tourAt);
+    });
+    const back = tour.querySelector(".tour-back");
+    const next = tour.querySelector(".tour-next");
+    const done = tour.querySelector(".tour-done");
+    if (back) back.disabled = tourAt === 1;
+    if (next) next.hidden = tourAt === count;
+    if (done) done.hidden = tourAt !== count;
+  }
+
+  // Shown once, on a first visit, and only when the page was not opened on a
+  // link to some other panel. The marker is written when the walkthrough
+  // opens, not when it is finished, so closing it early is taken as an answer.
+  function offerTour() {
+    if (window.location.hash || readSetting("daybreak-tour-seen", "") === "yes") return;
+    if (!document.getElementById("tour-panel")) return;
+    writeSetting("daybreak-tour-seen", "yes");
+    showTourSlide(1);
+    window.location.hash = "tour-panel";
+  }
+
+  document.addEventListener("click", function (event) {
+    const step = event.target.closest("[data-tour-step]");
+    const done = event.target.closest("[data-tour-done]");
+    const opener = event.target.closest('a[href="#tour-panel"]');
+    const model = event.target.closest(".model-card[data-model]");
+    if (step) showTourSlide(tourAt + parseInt(step.getAttribute("data-tour-step"), 10));
+    if (done) closeStaticDialog();
+    if (opener) showTourSlide(1);
+    // A model card reports its own name. The server checks the name against
+    // the same pattern it uses everywhere before doing anything with it.
+    if (model) send("model_choice", model.getAttribute("data-model"));
+  });
+
+  // Copying the script uses the clipboard interface where the browser grants
+  // it and falls back to selecting the text, which leaves the reader one
+  // keystroke from a copy instead of with a button that did nothing.
+  document.addEventListener("click", function (event) {
+    const button = event.target.closest("[data-copy-target]");
+    if (!button) return;
+    const source = document.getElementById(button.getAttribute("data-copy-target"));
+    if (!source) return;
+    const label = button.querySelector(".copy-code-label");
+    const done = function (text) {
+      if (label) label.textContent = text;
+      button.classList.toggle("is-copied", text === "Copied");
+      window.setTimeout(function () {
+        if (label) label.textContent = "Copy";
+        button.classList.remove("is-copied");
+      }, 2200);
+    };
+    const select = function () {
+      const range = document.createRange();
+      range.selectNodeContents(source);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      done("Selected, now press copy");
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(source.textContent).then(function () { done("Copied"); }, select);
+    } else {
+      select();
+    }
+  });
+
   // A quick-start card on the landing page picks the sample, then asks the
   // server to load it and run its starting method. Two inputs instead of one
   // because the sample selector in the sidebar has to move as well, so the
@@ -387,6 +521,10 @@
     const sample = card.getAttribute("data-sample");
     if (!sample || typeof Shiny === "undefined") return;
     send("quick_start_sample", sample);
+  });
+
+  document.addEventListener("input", function (event) {
+    if (event.target && event.target.id === "method-search") filterMethods(event.target.value);
   });
 
   document.addEventListener("keydown", function (event) {
@@ -406,6 +544,11 @@
     if (event.key === "Escape") {
       closeAppearance(true);
       closeStaticDialog();
+    }
+    const tourOpen = document.querySelector("#tour-panel.is-open");
+    if (tourOpen && (event.key === "ArrowRight" || event.key === "ArrowLeft")) {
+      showTourSlide(tourAt + (event.key === "ArrowRight" ? 1 : -1));
+      event.preventDefault();
     }
     if (
       event.target.classList &&

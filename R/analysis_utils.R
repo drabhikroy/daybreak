@@ -336,6 +336,17 @@ omega_squared <- function(aov_table) {
 # total score, so both have to come from the same rows. Taking item variances
 # with na.rm while the total score silently dropped incomplete rows mixed two
 # different denominators and could push alpha outside its usual range.
+# Epsilon from the covariance matrix of the repeated conditions, after double
+# centering. It runs from 1 / (k - 1), the worst case, to 1, where the
+# variances of all pairwise differences are equal.
+greenhouse_geisser <- function(covariance) {
+  k <- ncol(covariance)
+  if (k <= 2L) return(1)
+  center <- diag(k) - 1 / k
+  centered <- center %*% covariance %*% center
+  sum(diag(centered))^2 / ((k - 1) * sum(centered^2))
+}
+
 alpha_manual <- function(items) {
   items <- as.data.frame(items)
   k <- ncol(items)

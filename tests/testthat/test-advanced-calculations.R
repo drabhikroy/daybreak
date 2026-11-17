@@ -1,7 +1,7 @@
 testthat::test_that("MASS count and ordinal models return coefficient tables", {
   testthat::skip_if_not_installed("MASS")
 
-  negative <- analyse_negative_binomial(
+  negative <- analyze_negative_binomial(
     MASS::quine,
     list(outcome = "Days", predictors = c("Eth", "Sex"), exposure_time = ""),
     list()
@@ -16,7 +16,7 @@ testthat::test_that("MASS count and ordinal models return coefficient tables", {
     score = stats::rnorm(180),
     group = factor(sample(c("A", "B"), 180, replace = TRUE))
   )
-  ordinal <- analyse_ordinal_regression(
+  ordinal <- analyze_ordinal_regression(
     ordinal_data,
     list(outcome = "rating", predictors = c("score", "group")),
     list(ordinal_order = c("low", "middle", "high"), conf_level = 0.90)
@@ -25,7 +25,7 @@ testthat::test_that("MASS count and ordinal models return coefficient tables", {
   testthat::expect_identical(ordinal$extras$order, c("low", "middle", "high"))
   testthat::expect_true(any(grepl('levels = c("low", "middle", "high")', ordinal$code, fixed = TRUE)))
   testthat::expect_error(
-    analyse_ordinal_regression(
+    analyze_ordinal_regression(
       ordinal_data,
       list(outcome = "rating", predictors = c("score", "group")),
       list(ordinal_order = c("low", "high"))
@@ -38,7 +38,7 @@ testthat::test_that("MASS count and ordinal models return coefficient tables", {
 testthat::test_that("multinomial regression returns category-specific estimates", {
   testthat::skip_if_not_installed("nnet")
 
-  result <- analyse_multinomial_regression(
+  result <- analyze_multinomial_regression(
     datasets::iris,
     list(outcome = "Species", predictors = c("Sepal.Length", "Sepal.Width")),
     list()
@@ -51,7 +51,7 @@ testthat::test_that("factor analysis reports loadings and fit", {
   testthat::skip_if_not_installed("psych")
 
   items <- psych::bfi[stats::complete.cases(psych::bfi[, 1:6]), 1:6]
-  result <- analyse_factor_analysis(
+  result <- analyze_factor_analysis(
     items,
     list(variables = names(items)),
     list(factors = 2, rotation = "oblimin", factor_method = "minres")
@@ -69,7 +69,7 @@ testthat::test_that("CFA, SEM, and mediation models converge on known examples",
     "speed =~ x7 + x8 + x9",
     sep = "\n"
   )
-  cfa <- analyse_cfa(
+  cfa <- analyze_cfa(
     lavaan::HolzingerSwineford1939,
     list(model_syntax = cfa_syntax),
     list(estimator = "MLR", missing_method = "fiml", ordered = character(0))
@@ -80,7 +80,7 @@ testthat::test_that("CFA, SEM, and mediation models converge on known examples",
 
   sem_data <- lavaan::PoliticalDemocracy
   sem_syntax <- default_sample_syntax("political", "sem")
-  sem <- analyse_sem(
+  sem <- analyze_sem(
     sem_data,
     list(model_syntax = sem_syntax),
     list(estimator = "MLR", missing_method = "fiml", ordered = character(0))
@@ -92,7 +92,7 @@ testthat::test_that("CFA, SEM, and mediation models converge on known examples",
   mediation_data <- data.frame(x = stats::rnorm(140))
   mediation_data$m <- 0.6 * mediation_data$x + stats::rnorm(140)
   mediation_data$y <- 0.4 * mediation_data$m + 0.2 * mediation_data$x + stats::rnorm(140)
-  mediation <- analyse_mediation(
+  mediation <- analyze_mediation(
     mediation_data,
     list(outcome = "y", exposure = "x", mediator = "m", controls = character(0)),
     list(bootstrap = 200)
@@ -145,7 +145,7 @@ testthat::test_that("survival analyses return curves and hazard ratios", {
   lung$status <- factor(lung$status, levels = c(1, 2), labels = c("Censored", "Event"))
   lung$sex <- factor(lung$sex)
 
-  kaplan_meier <- analyse_kaplan_meier(
+  kaplan_meier <- analyze_kaplan_meier(
     lung,
     list(time = "time", status = "status", group = "sex"),
     list()
@@ -153,7 +153,7 @@ testthat::test_that("survival analyses return curves and hazard ratios", {
   testthat::expect_gt(nrow(kaplan_meier$plot_data), 10)
   testthat::expect_equal(nrow(kaplan_meier$tests), 1)
 
-  cox <- analyse_cox_regression(
+  cox <- analyze_cox_regression(
     lung,
     list(time = "time", status = "status", predictors = c("age", "sex")),
     list()
@@ -166,14 +166,14 @@ testthat::test_that("survival analyses reject invalid time and event data", {
   testthat::skip_if_not_installed("survival")
   d <- data.frame(time = c(1, 2, -1, 4), status = factor(c("No", "Yes", "No", "Yes")), x = 1:4)
   testthat::expect_error(
-    analyse_kaplan_meier(d, list(time = "time", status = "status", group = ""), list()),
+    analyze_kaplan_meier(d, list(time = "time", status = "status", group = ""), list()),
     "cannot be negative",
     fixed = TRUE
   )
   d$time <- 1:4
   d$status <- factor(c("No", "No", "No", "Yes"))
   testthat::expect_error(
-    analyse_cox_regression(d, list(time = "time", status = "status", predictors = "x"), list()),
+    analyze_cox_regression(d, list(time = "time", status = "status", predictors = "x"), list()),
     "more observed events",
     fixed = TRUE
   )
@@ -182,7 +182,7 @@ testthat::test_that("survival analyses reject invalid time and event data", {
 testthat::test_that("time-series analysis checks order and calendar spacing", {
   set.seed(104)
   regular <- data.frame(time = seq(as.Date("2020-01-01"), by = "month", length.out = 48), y = stats::rnorm(48))
-  got <- analyse_time_series(
+  got <- analyze_time_series(
     regular, list(outcome = "y", time = "time"),
     list(ar_p = 1, ar_d = 0, ar_q = 0, frequency = 12)
   )
@@ -190,7 +190,7 @@ testthat::test_that("time-series analysis checks order and calendar spacing", {
 
   irregular <- data.frame(time = c(1:20, 22:40), y = stats::rnorm(39))
   testthat::expect_error(
-    analyse_time_series(
+    analyze_time_series(
       irregular, list(outcome = "y", time = "time"),
       list(ar_p = 1, ar_d = 0, ar_q = 0, frequency = 1)
     ),

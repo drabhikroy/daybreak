@@ -276,7 +276,7 @@ tree_prediction <- function(data, roles, options, mode = c("classification", "re
        seed = seed, train_fraction = train_fraction, cp = cp, minsplit = minsplit)
 }
 
-analyse_classification_tree <- function(data, roles, options) {
+analyze_classification_tree <- function(data, roles, options) {
   x <- tree_prediction(data, roles, options, "classification")
   result_record(
     "classification_tree", x$frame$used, x$frame$omitted,
@@ -294,7 +294,7 @@ analyse_classification_tree <- function(data, roles, options) {
   )
 }
 
-analyse_regression_tree <- function(data, roles, options) {
+analyze_regression_tree <- function(data, roles, options) {
   x <- tree_prediction(data, roles, options, "regression")
   result_record(
     "regression_tree", x$frame$used, x$frame$omitted, estimates = x$importance,
@@ -348,7 +348,7 @@ forest_prediction <- function(data, roles, options, mode = c("classification", "
        seed = seed, train_fraction = train_fraction, trees = trees)
 }
 
-analyse_random_forest_classification <- function(data, roles, options) {
+analyze_random_forest_classification <- function(data, roles, options) {
   x <- forest_prediction(data, roles, options, "classification")
   result_record(
     "random_forest_classification", x$frame$used, x$frame$omitted,
@@ -363,7 +363,7 @@ analyse_random_forest_classification <- function(data, roles, options) {
   )
 }
 
-analyse_random_forest_regression <- function(data, roles, options) {
+analyze_random_forest_regression <- function(data, roles, options) {
   x <- forest_prediction(data, roles, options, "regression")
   result_record(
     "random_forest_regression", x$frame$used, x$frame$omitted,
@@ -383,7 +383,7 @@ analyse_random_forest_regression <- function(data, roles, options) {
 # predictor with a wide range would otherwise decide every neighbor by itself.
 # The center and spread come from the training rows alone, because using the
 # full data would leak holdout information into the model.
-analyse_nearest_neighbors <- function(data, roles, options) {
+analyze_nearest_neighbors <- function(data, roles, options) {
   columns <- unique(c(roles$outcome, roles$predictors))
   f <- complete_frame(data, columns)
   need_n(f$used, 20, "complete rows for training and holdout checks")
@@ -529,7 +529,7 @@ elastic_net_prediction <- function(data, roles, options, mode = c("classificatio
   )
 }
 
-analyse_elastic_net_classification <- function(data, roles, options) {
+analyze_elastic_net_classification <- function(data, roles, options) {
   x <- elastic_net_prediction(data, roles, options, "classification")
   metrics <- rbind(
     classification_scores(x$observed, x$predicted),
@@ -555,7 +555,7 @@ analyse_elastic_net_classification <- function(data, roles, options) {
   )
 }
 
-analyse_elastic_net_regression <- function(data, roles, options) {
+analyze_elastic_net_regression <- function(data, roles, options) {
   x <- elastic_net_prediction(data, roles, options, "regression")
   metrics <- rbind(
     regression_scores(x$observed, x$predicted),
@@ -583,7 +583,7 @@ analyse_elastic_net_regression <- function(data, roles, options) {
 
 # Probability classification ---------------------------------------------
 
-analyse_naive_bayes <- function(data, roles, options) {
+analyze_naive_bayes <- function(data, roles, options) {
   columns <- unique(c(roles$outcome, roles$predictors))
   f <- complete_frame(data, columns)
   need_n(f$used, 20, "complete rows for training and holdout checks")
@@ -677,7 +677,7 @@ density_checks <- function(cluster, method_label) {
   )
 }
 
-analyse_dbscan_clustering <- function(data, roles, options) {
+analyze_dbscan_clustering <- function(data, roles, options) {
   x <- density_cluster_frame(data, roles$variables)
   eps <- as.numeric(options$dbscan_eps %||% 0.7)
   min_points <- as.integer(options$density_min_points %||% 5L)
@@ -702,7 +702,7 @@ analyse_dbscan_clustering <- function(data, roles, options) {
   )
 }
 
-analyse_hdbscan_clustering <- function(data, roles, options) {
+analyze_hdbscan_clustering <- function(data, roles, options) {
   x <- density_cluster_frame(data, roles$variables)
   min_points <- as.integer(options$density_min_points %||% 5L)
   if (length(min_points) != 1L || is.na(min_points) || min_points < 2L || min_points > x$frame$used) stop("Minimum cluster size must be at least two and no larger than the number of complete rows.")

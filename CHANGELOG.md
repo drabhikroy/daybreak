@@ -1,5 +1,47 @@
 # Changes
 
+## 1.0.0 - 2026-11-16
+
+- Added a second evidence check. One-sample, independent, and paired t tests,
+  one-way ANOVA, the chi-square test, the one-proportion test, and Pearson
+  correlation now report a Bayes factor beside the interval, and the verdict
+  weighs the two together.
+- Added three methods: an equivalence test with a margin you set, rater
+  agreement with Cohen's kappa and its weighted forms, and random-effects
+  meta-analysis with a forest plot and a prediction interval.
+- Added two example datasets, the multiple sclerosis diagnoses of Westlund and
+  Kurland and the thirteen BCG vaccine trials.
+- Added a Help me choose guide to the Methods directory, a search box across
+  all 56 methods, and compact method cards.
+- Added a first-visit walkthrough that can be reopened from Help.
+- Added a verdict and key numbers at the top of every result, and an R code
+  tab that shows the script and copies it.
+- Rebuilt Local models as three steps: choose how to run Ollama, get it
+  running, and pick a model. Daybreak can keep its own copy of Ollama in a
+  folder it can remove, checks that download against the published SHA-256,
+  describes what each model is good at and where it falls short, and can add,
+  remove, and switch between installed models.
+- Rejected a local rewrite when the model returns its instructions in place
+  of a rewrite, which the heading and number checks alone would have passed.
+- Added a glossary, a guide to the verdicts, keyboard shortcuts, and version,
+  license, and release details to Help.
+- Fixed the messages from the server to the page, none of which were being
+  received, so a quick-start example now runs and the sidebar follows the
+  workflow.
+- Fixed repeated-measures ANOVA, which treated a numeric condition as a
+  straight-line trend and returned no test. It now reports the
+  Greenhouse-Geisser correction and partial eta squared.
+- Fixed the two-proportions figure, which failed with an error.
+- Fixed the one-proportion verdict, which was judged against zero instead of
+  the reference value.
+- Fixed figures that kept their dark colors when the page opened in light mode.
+- Fixed a type scale that rendered smaller than intended, and laid out the
+  header and figures for narrow screens.
+- Restored `SECURITY.md`, `CODE_OF_CONDUCT.md`, `.Rbuildignore`, and the
+  standard README structure, which the 0.10.1 commit removed by mistake.
+- Listed every optional package in `DESCRIPTION` so continuous integration
+  installs what the suite uses.
+
 ## 0.10.1 - 2026-11-04
 
 - Quoted every column name written into an exported R script, so a name that

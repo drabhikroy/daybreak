@@ -1,6 +1,6 @@
 testthat::test_that("every catalog entry has an engine", {
   for (id in names(ANALYSES)) {
-    engine <- paste0("analyse_", ANALYSES[[id]]$engine)
+    engine <- paste0("analyze_", ANALYSES[[id]]$engine)
     testthat::expect_true(exists(engine, mode = "function"), info = paste(id, "needs", engine))
   }
 })
@@ -14,7 +14,7 @@ testthat::test_that("catalog ids and role ids are unique", {
 })
 
 testthat::test_that("the release contains the documented method count", {
-  testthat::expect_equal(length(ANALYSES), 53)
+  testthat::expect_equal(length(ANALYSES), 56)
   testthat::expect_equal(sum(vapply(ANALYSES, function(x) x$kind == "machine_learning", logical(1))), 13)
 })
 
